@@ -1,0 +1,143 @@
+.home {
+  position: absolute;
+  inset: 0;
+}
+.home__greet {
+  position: absolute;
+  top: 92px;
+  left: 16px;
+  right: 16px;
+  text-align: center;
+  animation: rise-in 0.6s var(--ease-out) both;
+}
+.home__greet h1 {
+  margin: 0;
+  font-size: clamp(28px, 3.2vw, 40px);
+  font-weight: 500;
+  line-height: 1.25;
+}
+.home__greet p {
+  margin: 8px 0 0;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+.home__box {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 160px;
+  height: 160px;
+  margin: -80px 0 0 -80px;
+  border: 2px dashed #9aa3b8;
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  z-index: 3;
+}
+.home__box[data-gulp='true'] {
+  animation: gulp 0.5s var(--ease-out);
+}
+@keyframes gulp {
+  40% {
+    transform: scale(1.12);
+  }
+  70% {
+    transform: scale(0.97);
+  }
+}
+.home--over .home__box {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 10px var(--accent-glow);
+  transform: scale(1.05);
+}
+.home__count {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.home__drop {
+  font-size: 15px;
+}
+.home__boxlabel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(42% + 94px);
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.home__actions {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: calc(42% + 140px);
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  z-index: 4;
+}
+
+/* flying file cards */
+.fcard {
+  position: absolute;
+  width: 210px;
+  height: 60px;
+  margin: -30px 0 0 -105px; /* x/y are the card's centre */
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(30, 34, 48, 0.08);
+  z-index: 6;
+  animation: card-land 0.45s var(--ease-out) backwards;
+  transition:
+    transform 0.9s cubic-bezier(0.65, 0, 0.35, 1),
+    opacity 0.9s ease-in;
+}
+.fcard--fly {
+  transform: translate(var(--dx), var(--dy)) scale(0.12);
+  opacity: 0;
+}
+@keyframes card-land {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(1.04);
+  }
+}
+.fcard__icon {
+  flex: none;
+  color: var(--fix);
+}
+.fcard__icon--img {
+  color: var(--accent);
+}
+.fcard__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fcard__name {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fcard__kind {
+  font-size: 12px;
+  color: var(--muted);
+}

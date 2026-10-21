@@ -1,0 +1,202 @@
+/* ============================================================
+   DysCover design tokens + global styles
+   Dyslexia-friendly choices: Lexend font, warm off-white board
+   (no pure white page), generous line-height, short text.
+   ============================================================ */
+
+:root {
+  --ink: #1e2230;
+  --ink-2: #4a5060;
+  --muted: #5b6170;
+  --board: #f7f5ef;
+  --board-dot: #dcd8cc;
+  --line: #d6d2c6;
+  --line-soft: #e2ded3;
+  --edge: #b9b5a8;
+  --surface: #ffffff;
+  --surface-2: #fbfaf7;
+  --chip: #ece9e1;
+
+  --accent: #2f55d4;
+  --accent-ink: #1f3fa8;
+  --accent-soft: #eef2fd;
+  --accent-glow: rgba(47, 85, 212, 0.16);
+
+  --fix: #b5480f; /* corrections */
+  --fix-soft: #fff6ef;
+  --highlight: #ffe7a3; /* source quote highlight */
+
+  /* the iridescent "voice" colours used by the orb, logo and live dots */
+  --iris-1: #6ea8ff;
+  --iris-2: #a78bfa;
+  --iris-3: #f096c8;
+  --iris-4: #ffbe82;
+  --iris-5: #7fdbca;
+  --iris: conic-gradient(from 0deg, var(--iris-1), var(--iris-2), var(--iris-3), var(--iris-4), var(--iris-5), var(--iris-1));
+
+  --font: 'Lexend', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 3px rgba(30, 34, 48, 0.06);
+  --shadow-float: 0 18px 48px rgba(30, 34, 48, 0.14);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--board);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.005em;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.board {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 640px;
+  overflow: hidden;
+  background-color: var(--board);
+  background-image: radial-gradient(var(--board-dot) 1.2px, transparent 1.2px);
+  background-size: 26px 26px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- shared buttons ---------- */
+
+.btn {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.btn:hover {
+  border-color: var(--edge);
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+.btn--primary:hover {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+.btn--lg {
+  height: 52px;
+  padding: 0 28px;
+  font-size: 16px;
+}
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- motion ---------- */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-glow);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(47, 85, 212, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* small badge so nobody mistakes the scripted demo for the real backend */
+.demo-chip {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  z-index: 19;
+}

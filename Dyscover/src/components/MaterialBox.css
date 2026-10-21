@@ -1,0 +1,114 @@
+.mbox {
+  position: absolute;
+  top: 80px;
+  right: 28px;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.mbox__btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  text-align: right;
+  border-radius: 16px;
+}
+.mbox__label {
+  display: flex;
+  flex-direction: column;
+}
+.mbox__title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.mbox__meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+.mbox__square {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex: none;
+  border: 2px dashed #9aa3b8;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mbox__count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* fly from screen centre into the corner */
+.mbox__btn--pre {
+  visibility: hidden;
+}
+.mbox__btn--fly .mbox__square {
+  animation: mbox-fly 1.4s cubic-bezier(0.65, 0, 0.25, 1) both;
+}
+.mbox__btn--fly .mbox__label {
+  animation: mbox-label 1.8s ease-out both;
+}
+@keyframes mbox-fly {
+  0%,
+  20% {
+    transform: translate(var(--fx, 0), var(--fy, 0)) scale(2.67);
+    border-radius: 22px;
+  }
+  100% {
+    transform: none;
+    border-radius: 14px;
+  }
+}
+@keyframes mbox-label {
+  0%,
+  70% {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+
+.mbox__list {
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  min-width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  animation: rise-in 0.2s ease-out;
+}
+.mbox__list li {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.mbox__file {
+  font-size: 14px;
+}
+.mbox__kind {
+  font-size: 12px;
+  color: var(--muted);
+}

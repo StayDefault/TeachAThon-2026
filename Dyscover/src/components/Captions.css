@@ -1,0 +1,56 @@
+.captions {
+  position: absolute;
+  left: 50%;
+  bottom: 124px;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 32px));
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.captions__assistant {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+.captions__user {
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.captions__user--final {
+  animation: caption-out 0.6s ease 5s forwards;
+}
+.captions__you {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-right: 8px;
+}
+
+@keyframes caption-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* node panel open (500px wide + 24px margin on the right) */
+.captions--beside {
+  left: calc((100% - 524px) / 2);
+  width: min(640px, calc(100% - 580px));
+}
+@media (max-width: 1000px) {
+  .captions--beside {
+    display: none;
+  }
+}

@@ -1,0 +1,127 @@
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(30, 34, 48, 0.12);
+  cursor: default;
+  z-index: 40;
+  animation: fade-in 0.25s ease-out;
+}
+.drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 16.667%;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--line-soft);
+  box-shadow: 8px 0 32px rgba(30, 34, 48, 0.1);
+  display: flex;
+  flex-direction: column;
+  z-index: 41;
+  animation: drawer-in 0.3s var(--ease-out);
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+.drawer__head {
+  height: 68px;
+  flex: none;
+  padding: 0 12px 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.drawer__title {
+  font-size: 17px;
+  font-weight: 600;
+}
+.drawer__close {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.drawer__close:hover {
+  background: var(--chip);
+}
+.drawer__new {
+  padding: 0 12px 12px;
+  flex: none;
+}
+.drawer__newbtn {
+  width: 100%;
+  border-radius: 12px;
+}
+.drawer__list {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 12px 20px;
+}
+.drawer__group {
+  margin: 0;
+  padding: 14px 8px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.drawer__item {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.drawer__item:hover {
+  background: var(--chip);
+}
+.drawer__item--active,
+.drawer__item--active:hover {
+  background: var(--accent-soft);
+}
+.drawer__item-title {
+  font-size: 15px;
+}
+.drawer__item--active .drawer__item-title {
+  font-weight: 500;
+}
+.drawer__item-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.drawer__empty {
+  padding: 12px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.drawer__toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.drawer__toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
