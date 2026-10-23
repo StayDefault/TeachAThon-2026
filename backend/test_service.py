@@ -28,13 +28,14 @@ NEXT = {"title": "Photosynthesis", "topic": "Plant biology", "answer": "Light pr
 
 class ServiceTest(unittest.TestCase):
     def setUp(self):
-        self.auth_env = patch.dict(os.environ, {"DYSCOVER_JUDGE_PASSWORD": "judge-pass", "DYSCOVER_SESSION_SECRET": "test-secret"})
+        self.auth_env = patch.dict(os.environ, {"DYSCOVER_TEST_EMAIL": "judge@example.com",
+                                             "DYSCOVER_TEST_PASSWORD": "judge-pass", "DYSCOVER_SESSION_SECRET": "test-secret"})
         self.auth_env.start()
         self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
         self.db = patch.object(store, "DB_PATH", Path(self.tmp.name) / "sessions.sqlite3")
         self.db.start()
         self.client = TestClient(app.app)
-        self.assertEqual(self.client.post("/api/auth/login", json={"password": "judge-pass"}).status_code, 200)
+        self.assertEqual(self.client.post("/api/auth/login", json={"email": "judge@example.com", "password": "judge-pass"}).status_code, 200)
 
     def tearDown(self):
         self.client.close()
@@ -65,13 +66,20 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         with TestClient(app.app) as other:
             self.assertEqual(other.get("/api/sessions").status_code, 401)
-            self.assertEqual(other.post("/api/auth/login", json={"password": "wrong"}).status_code, 401)
-            self.assertEqual(other.post("/api/auth/login", json={"password": "judge-pass"}).status_code, 200)
+            self.assertEqual(other.post("/api/auth/login", json={"email": "other@example.com", "password": "judge-pass"}).status_code, 401)
+            self.assertEqual(other.post("/api/auth/login", json={"email": "judge@example.com", "password": "wrong"}).status_code, 401)
+            self.assertEqual(other.post("/api/auth/login", json={"email": "JUDGE@example.com", "password": "judge-pass"}).status_code, 200)
             self.assertEqual(other.get("/api/sessions").json(), [])
             self.assertEqual(other.get(f"/api/sessions/{sid}").status_code, 404)
             with self.assertRaises(Exception):
                 with other.websocket_connect(f"/api/sessions/{sid}/live"):
                     pass
+
+    def test_login_without_ai_key(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}), TestClient(app.app) as browser:
+            self.assertEqual(browser.post("/api/auth/login", json={"email": "judge@example.com", "password": "judge-pass"}).status_code, 200)
+            self.assertEqual(browser.get("/api/auth/status").status_code, 200)
+            self.assertFalse(browser.get("/api/health").json()["aiConfigured"])
 
     def test_serves_built_frontend(self):
         if not app.FRONTEND_DIST.is_dir():

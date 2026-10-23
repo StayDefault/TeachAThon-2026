@@ -8,9 +8,12 @@ import { HomeScreen } from './screens/HomeScreen';
 import { StudyScreen } from './screens/StudyScreen';
 import { isMock } from './api';
 
+const requiresLogin = !isMock || import.meta.env.VITE_REQUIRE_LOGIN === 'true';
+
 export function App() {
-  const [signedIn, setSignedIn] = useState(isMock);
-  const [checkingLogin, setCheckingLogin] = useState(!isMock);
+  const [signedIn, setSignedIn] = useState(!requiresLogin);
+  const [checkingLogin, setCheckingLogin] = useState(requiresLogin);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const { state, dispatch, send } = useStore();
@@ -32,7 +35,7 @@ export function App() {
   };
 
   useEffect(() => {
-    if (isMock) return;
+    if (!requiresLogin) return;
     fetch('/api/auth/status').then((response) => setSignedIn(response.ok))
       .catch(() => setLoginError('Cannot reach the Dyscover server.'))
       .finally(() => setCheckingLogin(false));
@@ -43,9 +46,14 @@ export function App() {
     setLoginError('');
     try {
       const response = await fetch('/api/auth/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }),
       });
-      if (!response.ok) throw new Error(response.status === 401 ? 'Incorrect password.' : 'Sign-in is unavailable.');
+      if (!response.ok) {
+        const error: unknown = await response.json().catch(() => null);
+        const detail = error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
+          ? error.detail : `Sign-in failed (${response.status}).`;
+        throw new Error(detail);
+      }
       setPassword('');
       setSignedIn(true);
     } catch (error) {
@@ -58,10 +66,12 @@ export function App() {
     <main className="board">
       <form className="judge-login" onSubmit={signIn}>
         <h1>Dyscover</h1>
-        <p>Enter the judge password from the submission report.</p>
+        <p>Sign in to explore the prototype.</p>
+        <label htmlFor="judge-email">Email</label>
+        <input id="judge-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="username" />
         <label htmlFor="judge-password">Password</label>
         <input id="judge-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" />
-        <button type="submit">Enter prototype</button>
+        <button type="submit">Sign in</button>
         {loginError && <p role="alert">{loginError}</p>}
       </form>
     </main>

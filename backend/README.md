@@ -4,11 +4,12 @@ This service implements the contract in [`../Dyscover/docs/API.md`](../Dyscover/
 
 ## Temporary judge access
 
-The live backend now requires a shared judge password and a separate session secret. The login issues a 24-hour HttpOnly browser cookie; each browser sees only its own study sessions. Set secrets on the server, never in Vite or the submission repository. Build the frontend in real mode and serve it from this FastAPI app so REST, WebSocket, and cookies use one origin:
+The backend requires a shared judge email, password, and a separate session secret. The login issues a 24-hour HttpOnly browser cookie; each browser sees only its own study sessions. Set credentials on the server, never in Vite or the submission repository. Build the frontend in real mode and serve it from this FastAPI app so REST, WebSocket, and cookies use one origin:
 
 ```powershell
 $env:OPENAI_API_KEY = 'your-api-key'
-$env:DYSCOVER_JUDGE_PASSWORD = 'a-strong-judge-password'
+$env:DYSCOVER_TEST_EMAIL = 'judge@example.com'
+$env:DYSCOVER_TEST_PASSWORD = 'a-strong-judge-password'
 $env:DYSCOVER_SESSION_SECRET = 'a-long-random-secret-different-from-the-password'
 $env:DYSCOVER_PUBLIC_ORIGIN = 'https://your-public-domain.example'
 $env:DYSCOVER_DB = 'backend/dyscover.sqlite3'
@@ -22,6 +23,8 @@ backend/.venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --host 0.0
 
 Use an HTTPS host or reverse proxy that supports WebSockets, and persist `DYSCOVER_DB` on a private volume. Point the public domain at port 8000; FastAPI serves the built frontend. The public origin must exactly match the browser origin, with no trailing slash. Do not publish the judge password in the frontend bundle. The default safety caps are 3 sessions per browser, 30 sessions total, 25 tutor turns per session, 250 OpenAI request attempts total, and 50 login attempts total. These are lifetime caps in SQLite; `DYSCOVER_MAX_AI_CALLS` and `DYSCOVER_MAX_LOGINS` can change the latter two before launch. Keep the OpenAI account's own spending limit enabled. Old sessions remain on the private volume after cookies expire; remove the volume after judging if it contains disposable demo data.
 
+For a hosted scripted demo without an OpenAI key, build with `VITE_USE_MOCK=true VITE_REQUIRE_LOGIN=true npm run build`. Keep the FastAPI service running for sign-in and set `DYSCOVER_TEST_EMAIL`, `DYSCOVER_TEST_PASSWORD`, `DYSCOVER_SESSION_SECRET`, and `DYSCOVER_PUBLIC_ORIGIN`; `OPENAI_API_KEY` is not needed. A local mock build without `VITE_REQUIRE_LOGIN=true` still runs without the server.
+
 ## Run locally
 
 Use Python 3.12 or later. From the project root in PowerShell:
@@ -30,7 +33,7 @@ Use Python 3.12 or later. From the project root in PowerShell:
 python -m venv backend/.venv
 backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 # Set OPENAI_API_KEY in your environment before starting the server.
-# Also set DYSCOVER_JUDGE_PASSWORD and DYSCOVER_SESSION_SECRET as above.
+# Also set DYSCOVER_TEST_EMAIL, DYSCOVER_TEST_PASSWORD and DYSCOVER_SESSION_SECRET as above.
 backend/.venv/Scripts/python.exe -m uvicorn app:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 

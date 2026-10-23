@@ -1,4 +1,4 @@
-"""Short-lived, signed browser sessions for a shared judge password."""
+"""Short-lived, signed browser sessions for a shared judge account."""
 
 import hashlib
 import hmac
@@ -14,18 +14,22 @@ MAX_AGE = 24 * 60 * 60
 
 
 def configured():
-    return bool(os.environ.get("DYSCOVER_JUDGE_PASSWORD") and os.environ.get("DYSCOVER_SESSION_SECRET"))
+    return bool(os.environ.get("DYSCOVER_TEST_EMAIL") and os.environ.get("DYSCOVER_TEST_PASSWORD")
+                and os.environ.get("DYSCOVER_SESSION_SECRET"))
 
 
 def signing_key():
     if not configured():
-        raise HTTPException(503, "Configure judge password and session secret")
-    return (os.environ["DYSCOVER_SESSION_SECRET"] + os.environ["DYSCOVER_JUDGE_PASSWORD"]).encode()
+        raise HTTPException(503, "Configure judge email, password and session secret")
+    return (os.environ["DYSCOVER_SESSION_SECRET"] + os.environ["DYSCOVER_TEST_EMAIL"].lower()
+            + os.environ["DYSCOVER_TEST_PASSWORD"]).encode()
 
 
-def check_password(password):
+def check_credentials(email, password):
     signing_key()
-    return isinstance(password, str) and hmac.compare_digest(password, os.environ["DYSCOVER_JUDGE_PASSWORD"])
+    return (isinstance(email, str) and isinstance(password, str)
+            and hmac.compare_digest(email.strip().lower(), os.environ["DYSCOVER_TEST_EMAIL"].strip().lower())
+            and hmac.compare_digest(password, os.environ["DYSCOVER_TEST_PASSWORD"]))
 
 
 def issue():

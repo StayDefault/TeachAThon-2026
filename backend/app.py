@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai import AIError, plan, speak, transcribe
-from auth import COOKIE, MAX_AGE, check_password, configured, issue, owner
+from auth import COOKIE, MAX_AGE, check_credentials, configured, issue, owner
 from ingest import IngestError, chunks_for, extract
 from store import get, list_sessions, save
 from tutor import PlanError, apply_plan, manual_edit, message
@@ -47,7 +47,7 @@ async def require_login(request: Request, call_next):
 async def login(request: Request, response: Response):
     from store import reserve
     if not configured():
-        raise HTTPException(503, "Configure judge password and session secret")
+        raise HTTPException(503, "Configure judge email, password and session secret")
     if not reserve("login_attempts", int(os.environ.get("DYSCOVER_MAX_LOGINS", "50"))):
         raise HTTPException(429, "The judging demo has reached its login limit")
     if len(await request.body()) > 1024:
@@ -56,8 +56,8 @@ async def login(request: Request, response: Response):
         payload = await request.json()
     except ValueError:
         raise HTTPException(400, "Invalid login request") from None
-    if not isinstance(payload, dict) or not check_password(payload.get("password")):
-        raise HTTPException(401, "Incorrect password")
+    if not isinstance(payload, dict) or not check_credentials(payload.get("email"), payload.get("password")):
+        raise HTTPException(401, "Incorrect email or password")
     response.set_cookie(COOKIE, issue(), max_age=MAX_AGE, httponly=True,
                         secure=PUBLIC_ORIGIN.startswith("https://") or request.url.scheme == "https",
                         samesite="lax", path="/api")

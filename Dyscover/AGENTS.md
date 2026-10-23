@@ -25,6 +25,7 @@ npm run build        # type-check + production build
 |---|---|
 | `VITE_USE_MOCK=true` (default) | use `src/api/mock.ts` — scripted demo |
 | `VITE_USE_MOCK=false` | use `src/api/http.ts` — real REST + WebSocket client |
+| `VITE_REQUIRE_LOGIN=true` | require server-backed email/password sign-in even in mock mode (for hosted demos) |
 | `VITE_API_BASE` | backend origin; empty = Vite dev proxy `/api → http://localhost:8000` (see `vite.config.ts`) |
 
 Demo flow to try: **Use demo files → Start studying → "I'm new to this"** and watch (~30 s). Then click any node.
