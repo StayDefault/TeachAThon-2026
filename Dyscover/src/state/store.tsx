@@ -83,7 +83,7 @@ function removeSubtree(nodes: MapNode[], id: string): MapNode[] {
 function applyServer(state: AppState, e: ServerEvent): AppState {
   switch (e.type) {
     case 'voice.status':
-      return { ...state, voice: e.status };
+      return { ...state, voice: e.status, error: e.status === 'thinking' ? null : state.error };
     case 'voice.level':
       return state; // handled outside the reducer (see level.ts)
     case 'caption':

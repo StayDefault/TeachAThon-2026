@@ -1,0 +1,8 @@
+backend/*.sqlite3
+backend/*.sqlite3-*
+__pycache__/
+.dyscover-render/
+backend/.deps/
+backend/.venv/
+backend/.tmp/
+Dyscover/*.tsbuildinfo

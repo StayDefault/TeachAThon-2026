@@ -11,7 +11,7 @@ import type {
  * The ONLY surface the UI uses to talk to the backend.
  * Two implementations exist:
  *   - mock.ts  — scripted demo, no server needed (default)
- *   - http.ts  — real REST + WebSocket client (fill in the TODOs)
+ *   - http.ts  — real REST + WebSocket client
  * Pick one with VITE_USE_MOCK in .env (see api/index.ts).
  */
 export interface DysCoverBackend {

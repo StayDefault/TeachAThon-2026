@@ -3,6 +3,7 @@ import { useStore } from '../state/store';
 import { useLocalSpeech } from '../lib/useLocalSpeech';
 import { IconArrowRight, IconBox, IconFile, IconImage } from '../components/Icons';
 import { DEMO_MATERIALS } from '../api/mockData';
+import { isMock } from '../api';
 import './HomeScreen.css';
 
 interface Card {
@@ -36,6 +37,7 @@ export function HomeScreen() {
   const [gulp, setGulp] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
 
   useEffect(() => {
     speak("Hello! Drag your slides, handouts or photos onto the board — I'll pack them into the box and read them.");
@@ -92,7 +94,13 @@ export function HomeScreen() {
 
   const start = async () => {
     setStarting(true);
-    await startNewSession(files);
+    setStartError('');
+    try {
+      await startNewSession(files);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : 'Could not start this session');
+      setStarting(false);
+    }
   };
 
   const inBox = files.length - cards.length;
@@ -151,7 +159,7 @@ export function HomeScreen() {
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,image/*"
+          accept=".pdf,.docx,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp"
           hidden
           onChange={(e) => {
             addFiles(Array.from(e.target.files ?? []));
@@ -161,17 +169,18 @@ export function HomeScreen() {
         <button className="btn btn--lg" onClick={() => inputRef.current?.click()}>
           Browse files
         </button>
-        {files.length === 0 ? (
+        {files.length === 0 && isMock ? (
           <button className="btn btn--lg" onClick={useDemoFiles}>
             Use demo files
           </button>
-        ) : (
+        ) : files.length > 0 ? (
           <button className="btn btn--lg btn--primary" onClick={start} disabled={starting || inBox < files.length}>
             {starting ? 'Reading…' : 'Start studying'}
             <IconArrowRight />
           </button>
-        )}
+        ) : null}
       </div>
+      {startError && <p role="alert" className="home__error">{startError}</p>}
 
       {/* the dock and captions are rendered by App */}
     </div>

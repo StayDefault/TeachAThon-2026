@@ -71,7 +71,7 @@ export function NodePanel({ sessionId, nodeId, onClose }: { sessionId: string; n
                 <IconFile size={18} />
                 <span>
                   {detail.source.fileName}
-                  {detail.source.page ? ` · slide ${detail.source.page}` : ''}
+                  {detail.source.page ? ` · ${detail.source.fileName.toLowerCase().endsWith('.pptx') ? 'slide' : 'page'} ${detail.source.page}` : ''}
                 </span>
               </div>
             </section>

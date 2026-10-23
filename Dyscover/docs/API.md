@@ -5,6 +5,8 @@ TypeScript source of truth for every shape: `src/types.ts`. **If you change a sh
 
 Base path: `/api`. All JSON is UTF-8. Timestamps are ISO 8601 strings.
 
+The live backend requires `POST /api/auth/login` with JSON `{ "password": "…" }`. It sets a 24-hour HttpOnly cookie. `GET /api/auth/status` checks that cookie. All other session REST calls and the live WebSocket require the cookie; sessions are isolated per browser. The scripted mock does not use login.
+
 ---
 
 ## 1. REST
