@@ -247,6 +247,8 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(app.map_edit_requested("Please move the Light node under Water"))
         self.assertTrue(app.map_edit_requested("Reorganise my concept map"))
         self.assertFalse(app.map_edit_requested("Explain how light helps plants"))
+        self.assertFalse(app.map_edit_requested("How does the weight change at each node?"))
+        self.assertFalse(app.map_edit_requested("Can you put the loss in simple words?"))
 
     def test_manual_edits_persist_through_later_ai_turns(self):
         sid = self.create()
@@ -485,7 +487,7 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(session["nodes"][1]["userEdited"])
         self.assertNotIn("correction", session["nodes"][1])
 
-    def test_missing_content_requests_proactively_expand(self):
+    def test_missing_content_requests_ask_learner_to_explain_back(self):
         sid = self.create()
         response = {"status": "completed", "output": [{"type": "message", "content": [
             {"type": "output_text", "text": json.dumps(NEXT)}]}]}
@@ -495,7 +497,7 @@ class ServiceTest(unittest.TestCase):
                     ai.plan(store.get(sid), text, "turn")
                     body = send.call_args.args[1]
                     self.assertTrue(json.loads(body["input"])["explore_uncovered"])
-                    self.assertIn("Do not end with a question", body["instructions"])
+                    self.assertIn("ask the learner to explain one of them", body["instructions"])
 
     def test_viewed_and_edited_markers_survive_ai_updates(self):
         sid = self.create()
@@ -652,6 +654,34 @@ class ServiceTest(unittest.TestCase):
                         break
         self.assertFalse(store.get(sid)["nodes"][1]["userEdited"])
         self.assertEqual(speak_call.call_count, 1)
+
+    def test_typed_turn_waits_for_a_pending_edit_review(self):
+        sid = self.create()
+        session = store.get(sid)
+        apply_plan(session, NEXT)
+        store.save(session)
+        release = threading.Event()
+        replies = [dict(NEXT, nodes=[ROOT, dict(NEXT["nodes"][1], review="agree", reviewReason="Supported by the source.")]), NEXT]
+        def generate(*args):
+            release.wait(5)
+            return replies.pop(0)
+        with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", side_effect=generate) as plan_call:
+            with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
+                for _ in range(5): ws.receive_json()
+                ws.send_json({"type": "user.map_edit", "op": "update", "nodeId": "light", "label": "Light energy", "summary": "Light powers this process."})
+                self.assertEqual(ws.receive_json()["type"], "map.update")
+                self.assertEqual(ws.receive_json()["status"], "thinking")
+                ws.send_json({"type": "user.text", "text": "What does light do?"})
+                release.set()
+                answers = []
+                while NEXT["answer"] not in answers:
+                    event = ws.receive_json()
+                    if event["type"] == "error": self.fail(event["message"])
+                    if event["type"] == "caption" and event["caption"]["role"] == "assistant":
+                        answers.append(event["caption"]["text"])
+        self.assertTrue(answers[0].startswith("Agreed:"))
+        self.assertEqual(plan_call.call_count, 2)
+        self.assertFalse(store.get(sid)["nodes"][1]["userEdited"])
 
     def test_direct_help_request_gets_explanation_intent(self):
         sid = self.create()

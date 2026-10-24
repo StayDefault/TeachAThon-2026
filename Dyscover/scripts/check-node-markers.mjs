@@ -111,8 +111,7 @@ try {
   assert.equal(timers.length, 0);
   assert.equal(draw('speaking').props.children.props.text, 'A spoken answer');
   draw('listening'); effects.forEach(fn => fn());
-  assert.equal(timers.at(-1).delay, 2000);
-  timers.at(-1).fn();
-  assert.equal(draw('listening').props.children, false);
+  assert.equal(timers.length, 0);
+  assert.equal(draw('listening').props.children.props.text, 'A spoken answer');
 } finally { globalThis.window = oldWindow; }
 console.log('Node marker checks passed.');

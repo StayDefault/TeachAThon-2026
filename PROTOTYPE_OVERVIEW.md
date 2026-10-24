@@ -13,7 +13,7 @@ This document describes the implementation currently in this repository. It dist
 |---|---|
 | Material handling | Select or drop study files; inspect and remove selections before starting; retain original uploads with live sessions. |
 | Study conversation | Ask questions by voice or text, explain an understanding, request help, or ask for uncovered material. |
-| Concept mapping | Start from a root concept; add source-backed concepts as the conversation develops; preserve the existing structure during ordinary turns. |
+| Concept mapping | Start from a root concept; add a source-backed concept only after the learner explains it correctly, labelled in their words; preserve the existing structure during ordinary turns. |
 | Manual editing | Change labels and descriptions, add connected ideas, move nodes, and confirm removal of nodes and their branches. |
 | Automatic review | Review created or edited content automatically and return Agreed, Corrected, or Proposed deletion feedback. |
 | Source inspection | Show a short explanation, an extracted source quotation or original image, and a reference to the original upload. |
@@ -78,11 +78,11 @@ Useful prompts include:
 - “What components are missing from this map?”
 - “I don't know how to proceed.”
 
-Requests for missing material direct the tutor to identify a few important uncovered components, explain them, and add cited nodes under the existing structure. If the supplied material is already covered, it should say so rather than inventing additional content. This behavior depends on model output and remains subject to source validation and retry handling.
+Requests for missing material direct the tutor to identify a few important uncovered components, explain them, and ask the learner to explain one back. If the supplied material is already covered, it should say so rather than inventing additional content. This behavior depends on model output and remains subject to source validation and retry handling.
 
 ### Captions and waiting feedback
 
-Captions use **one rolling line total**, showing the active speaker. Longer speech rolls to its most recent words. **Thinking…** appears while the tutor is processing. Captions disappear approximately two seconds after speech finishes; this does not delete the conversation record.
+Captions use **one rolling line total**, showing the active speaker. Longer speech rolls to its most recent words. **Thinking…** appears while the tutor is processing. The tutor's last line stays on screen until the next reply, so slower readers can finish it.
 
 The learner's own captions can be toggled from Past sessions. Open **Conversation** to read the complete saved dialogue after captions disappear.
 
@@ -313,7 +313,7 @@ Hosted deployment behavior has not been revalidated as part of this documentatio
 | Upload rejected | Check the extension, file size, readable content, and combined extracted-text limit. Split a large lesson into smaller sessions. |
 | Edit remains red | Read any review error, confirm the live API connection, and try a clear, source-supported description. Failed reviews leave the edit marked. |
 | Unexpected correction or removal | Inspect the cited source and Conversation. Keep a proposed node if appropriate; deletion requires your confirmation. |
-| Dialogue is no longer in captions | Open Conversation; captions are intentionally temporary. |
+| Dialogue is no longer in captions | Open Conversation; captions show only the latest line. |
 | Map becomes difficult to trace | Use Arrange branches and Fit map to screen, or move individual nodes. Arrangement does not reclassify their saved parents. |
 | Speech is not detected | Select voice mode, check browser microphone permission, reduce background noise, and leave a short pause after speaking. Typing remains an alternative. |
 | Old behavior after an update | Restart the backend and hard-refresh the page. Rebuild the frontend when using the backend-served production build. |
@@ -355,7 +355,7 @@ The current implementation sends the extracted passages and recent conversation 
 | `Dyscover/src/components/map/` | Tree layout, connectors, node styles, movement, and map controls. |
 | `Dyscover/src/components/NodePanel.tsx` | Concept explanations, citations, editing, and deletion confirmation. |
 | `Dyscover/src/components/ConversationHistory.tsx` | Session-wide transcript and explicit reply playback. |
-| `Dyscover/src/components/Captions.tsx` | One-line rolling captions and expiry. |
+| `Dyscover/src/components/Captions.tsx` | One-line rolling captions. |
 | `Dyscover/src/api/` | Real API/WebSocket client and scripted demo implementation. |
 | `Dyscover/src/state/store.tsx` | Live UI state, saved/live messages, and map updates. |
 | `backend/app.py` | HTTP/WebSocket endpoints, speech loop, review scheduling, and persistence flow. |
@@ -371,7 +371,7 @@ The current implementation sends the extracted passages and recent conversation 
 
 Recent completed work includes the tutor model upgrade; local 5,000-request setting; file-selection management; removal of the fixed PDF page cap; independent text input; silent node inspection; explicit waiting feedback; one-line caption expiry; session-wide persistent dialogue; clearer hierarchy and legend; editable nodes; automatic edit review; and confirmation-based removal proposals.
 
-The latest backend test run passed **46 tests**. Tests cover authentication/ownership, uploads, grounded plans, message persistence and reload, edit review outcomes, stale-review retries, voice-paused review completion, and deletion confirmation behavior. Frontend checks cover layout, markers, history rendering, message deduplication, and caption expiry. The live frontend build has passed.
+The latest backend test run passed **47 tests**. Tests cover authentication/ownership, uploads, grounded plans, message persistence and reload, edit review outcomes, stale-review retries, voice-paused review completion, and deletion confirmation behavior. Frontend checks cover layout, markers, history rendering, message deduplication, and caption persistence. The live frontend build has passed.
 
 Selected real-model checks have exercised grounded map generation, a removal proposal, and an automatic Agreed review triggered by saving an edit. Browser checks have inspected sample map styles, hierarchy/legend changes, and the conversation panel. These checks are not a complete evaluation of arbitrary course materials or real microphone conditions.
 

@@ -35,9 +35,9 @@ Demo flow to try: **Use demo files → Start studying** and watch (~30 s). Then 
 ## 2. Product rules (do not break these)
 
 1. **Voice mode is hands-free.** No push-to-talk. Selecting text mode stops microphone capture; returning to voice mode starts it again. The voice area of the dock ends or resumes the session.
-2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. Start with 5–8 nodes; expand on request.
+2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. A node appears only after the learner explains that idea correctly; its label uses their words.
 3. **Corrections are the core feature.** When the learner says something wrong, mark that node `corrected`
-   with `said` (struck through) and `actually` (one sentence), focus it, and explain it out loud.
+   with `said` (quoted, never struck through) and `actually` (one sentence), focus it, and explain it out loud.
 4. **Everything is grounded in the learner's files.** Every node should have a source (`fileName`, `page`, verbatim `quote`).
    Existing map nodes keep their parent, order, label, and saved explanation during ordinary turns. Explicit map edits may change them.
 5. **Every spoken word is also on screen** (captions). Captions roll within one line total, showing the active speaker. The learner's own speech is marked "YOU …" and can be turned off in the sidebar.

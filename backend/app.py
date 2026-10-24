@@ -35,7 +35,10 @@ log = logging.getLogger(__name__)
 
 
 def map_edit_requested(text):
-    return bool(re.search(r"\b(reorganize|reorganise|rearrange|restructure)\b.*\bmap\b|\b(move|rename|remove|delete|put|place|change)\b.*\b(node|concept|branch|map|label|under|beneath)\b", text, re.I))
+    # Questions such as "How does the weight change at each node?" are not edit commands.
+    if re.match(r"\s*(?:how|why|what|when|where|which|who|does|do|is|are)\b", text, re.I):
+        return False
+    return bool(re.search(r"\b(reorganize|reorganise|rearrange|restructure)\b.*\bmap\b|\brename\b|\b(move|remove|delete|put|place)\b.*\b(node|concept|branch|map|under|beneath)\b|\bchange\b.*\b(label|name)\b", text, re.I))
 
 
 async def checked_plan(session, text, mode, initial=False, review_node_id=None):
@@ -317,6 +320,15 @@ async def live(websocket: WebSocket, session_id: str):
             await emit({"type": "error", "message": exc.message})
             await emit({"type": "voice.status", "status": "listening"})
 
+    async def queued_turn(review_task, text):
+        # Shielded so a later message cancels only this turn, never the pending review.
+        try:
+            await asyncio.shield(review_task)
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise
+        await turn(text)
+
     async def review_edit(previous_task, node_id):
         if previous_task and not previous_task.done():
             try:
@@ -400,9 +412,12 @@ async def live(websocket: WebSocket, session_id: str):
                 if not isinstance(text, str):
                     await emit({"type": "error", "message": "Text is required"})
                     continue
-                if task and not task.done():
-                    task.cancel()
-                task = asyncio.create_task(turn(text))
+                if task in review_parents:
+                    task = asyncio.create_task(queued_turn(task, text))
+                else:
+                    if task and not task.done():
+                        task.cancel()
+                    task = asyncio.create_task(turn(text))
             elif kind == "user.node_opened":
                 continue
             elif kind == "user.map_edit":

@@ -4,7 +4,7 @@ import './Captions.css';
 
 /**
  * Live subtitles above the dock.
- *  - Assistant line: rolls during speech, then clears after two seconds.
+ *  - Assistant line: rolls during speech, then stays until the next reply so slower readers can finish it.
  *  - Learner line: small grey "YOU" line so they can check they were heard correctly.
  *    It fades out a few seconds after it is final. Can be turned off in the sidebar.
  */
@@ -23,7 +23,6 @@ export function Captions({
   beside?: boolean;
 }) {
   const [userVisible, setUserVisible] = useState(false);
-  const [assistantVisible, setAssistantVisible] = useState(false);
   useEffect(() => {
     if (!showUser || !user) { setUserVisible(false); return; }
     setUserVisible(true);
@@ -33,19 +32,11 @@ export function Captions({
     }
   }, [showUser, user?.text, user?.final]);
 
-  useEffect(() => {
-    if (!assistant) { setAssistantVisible(false); return; }
-    setAssistantVisible(true);
-    if (status === 'speaking') return;
-    const timer = window.setTimeout(() => setAssistantVisible(false), 2000);
-    return () => window.clearTimeout(timer);
-  }, [assistant?.text, assistant?.final, status]);
-
   return (
     <div className={`captions ${beside ? 'captions--beside' : ''}`} aria-live="polite">
       {status === 'thinking' ? <p className="captions__assistant">Thinking…</p>
         : userVisible && user && status !== 'speaking' ? <RollingLine text={user.text} maxLines={1} className="captions__user" prefix="YOU" />
-          : assistantVisible && assistant && <RollingLine text={assistant.text} maxLines={1} className="captions__assistant" />}
+          : assistant && <RollingLine text={assistant.text} maxLines={1} className="captions__assistant" />}
     </div>
   );
 }

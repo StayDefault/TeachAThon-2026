@@ -90,7 +90,7 @@ Saving a content edit or creating a node automatically queues a tutor review. Th
 
 ## 2. Live session — WebSocket `GET /api/sessions/:id/live`
 
-Opened as soon as a session starts. Voice mode is hands-free; text mode stops microphone capture until voice mode is selected again. Map edits and new-marker acknowledgements remain available while voice is paused. Captions show one rolling line total for the active speaker and disappear about two seconds after speech ends; the complete transcript remains in Conversation. Caption events may include `message: ChatMessage` with the full saved reply and stable ID, independently of the rolling caption text.
+Opened as soon as a session starts. Voice mode is hands-free; text mode stops microphone capture until voice mode is selected again. Map edits and new-marker acknowledgements remain available while voice is paused. Captions show one rolling line total for the active speaker and the tutor's last line stays until the next reply; the complete transcript remains in Conversation. Caption events may include `message: ChatMessage` with the full saved reply and stable ID, independently of the rolling caption text.
 
 | Frame type | Direction | Content |
 |---|---|---|
@@ -137,7 +137,7 @@ Rules the UI relies on:
 - `userEdited: true` shows a red Edited marker until a source-grounded tutor review agrees. A correction replaces the edit marker with the orange correction style.
 - `pendingRemoval` holds a removal reason. Proposed removals show crosslines and remain in the map until the learner confirms deletion; Keep clears the proposal.
 - `position` is optional and stores a learner-placed pixel position on the map canvas; AI updates preserve it.
-- Start with **5–8 nodes max**; expand only on request. `hiddenChildren > 0` shows a "+N" badge.
+- Add a node only after the learner explains that idea correctly; label it with their words. `hiddenChildren > 0` shows a "+N" badge.
 - `order` sorts siblings (ascending).
 
 ### 2.2 Client → server events (`ClientEvent`)

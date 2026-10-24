@@ -171,7 +171,7 @@ function NodeBox({ box, seed, focused, selected, onOpen, onMove }: { box: Box; s
           </span>
           <span className="node__label">{node.label}</span>
           <span className="node__said">
-            You said: <s>{node.correction.said}</s>
+            You said: “{node.correction.said}”
           </span>
           <span className="node__actually">{node.correction.actually}</span>
         </>
