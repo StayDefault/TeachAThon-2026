@@ -1,27 +1,35 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MapNode } from '../../types';
-import { IconFit, IconMinus, IconPencil, IconPlus } from '../Icons';
+import { IconArrange, IconFit, IconMinus, IconPencil, IconPlus } from '../Icons';
 import { layoutTree, type Box } from './layout';
 import './ConceptMap.css';
 
 /**
  * The concept map. Data in (nodes), clicks out (onOpen).
- * Positions animate when the tree re-lays out; new nodes slide in.
+ * Existing positions stay put as new nodes are added; new nodes slide in.
  */
 export function ConceptMap({
   nodes,
   focusId,
   selectedId,
   onOpen,
+  onMove,
   onFocusDone,
 }: {
   nodes: MapNode[];
   focusId: string | null;
   selectedId: string | null;
   onOpen: (nodeId: string) => void;
+  onMove: (nodeId: string, x: number, y: number) => void;
   onFocusDone: () => void;
 }) {
-  const layout = useMemo(() => layoutTree(nodes), [nodes]);
+  const previousLayout = useRef<ReturnType<typeof layoutTree> | null>(null);
+  const [arrangement, setArrangement] = useState(0);
+  const layout = useMemo(() => {
+    const next = layoutTree(nodes, previousLayout.current ?? undefined);
+    previousLayout.current = next;
+    return next;
+  }, [nodes, arrangement]);
   const viewport = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [autoFit, setAutoFit] = useState(true);
@@ -35,8 +43,12 @@ export function ConceptMap({
   }, [layout.width, layout.height]);
 
   useLayoutEffect(() => {
-    if (autoFit) fit();
-  }, [autoFit, fit]);
+    if (arrangement > 0 || nodes.length <= 1) fit();
+  }, [arrangement]);
+
+  useLayoutEffect(() => {
+    if (autoFit && nodes.length <= 1) fit();
+  }, [autoFit, fit, nodes.length]);
 
   useEffect(() => {
     if (!autoFit) return;
@@ -63,6 +75,9 @@ export function ConceptMap({
       {!seed && <Legend />}
       {!seed && (
         <div className="map-tools" role="toolbar" aria-label="Map tools">
+          <button className="icon-btn" aria-label="Arrange branches" title="Arrange branches" onClick={() => { previousLayout.current = null; setArrangement((value) => value + 1); }}>
+            <IconArrange />
+          </button>
           <button className="icon-btn" onClick={() => zoom(1.15)} aria-label="Zoom in">
             <IconPlus />
           </button>
@@ -82,7 +97,17 @@ export function ConceptMap({
         </div>
       )}
 
-      <div className={`map ${selectedId ? 'map--dimmed' : ''}`} ref={viewport}>
+      <div className={`map ${selectedId ? 'map--dimmed' : ''}`} ref={viewport}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const nodeId = event.dataTransfer.getData('text/dyscover-node');
+          const stage = viewport.current?.querySelector('.map__stage');
+          const node = nodes.find((item) => item.id === nodeId);
+          if (!stage || !node || nodeId === 'root') return;
+          const rect = stage.getBoundingClientRect();
+          onMove(nodeId, Math.max(0, Math.round((event.clientX - rect.left) / scale - 125)), Math.max(0, Math.round((event.clientY - rect.top) / scale - 28)));
+        }}>
         <div className="map__sizer" style={{ width: layout.width * scale, height: layout.height * scale }}>
           <div className="map__stage" style={{ width: layout.width, height: layout.height, transform: `scale(${scale})` }}>
             <svg className="map__edges" width={layout.width} height={layout.height} aria-hidden="true">
@@ -98,6 +123,7 @@ export function ConceptMap({
                 focused={focusId === b.node.id}
                 selected={selectedId === b.node.id}
                 onOpen={onOpen}
+                onMove={onMove}
               />
             ))}
           </div>
@@ -107,13 +133,15 @@ export function ConceptMap({
   );
 }
 
-function NodeBox({ box, seed, focused, selected, onOpen }: { box: Box; seed: boolean; focused: boolean; selected: boolean; onOpen: (id: string) => void }) {
+function NodeBox({ box, seed, focused, selected, onOpen, onMove }: { box: Box; seed: boolean; focused: boolean; selected: boolean; onOpen: (id: string) => void; onMove: (id: string, x: number, y: number) => void }) {
   const { node, depth } = box;
   const cls = [
     'node',
     depth === 0 ? 'node--root' : depth === 1 ? 'node--l1' : 'node--l2',
     `node--${node.status}`,
-    seed ? 'node--seed' : '',
+    node.userEdited && node.status !== 'corrected' && !node.pendingRemoval ? 'node--edited' : '',
+    node.pendingRemoval ? 'node--removal' : '',
+    seed && node.status === 'new' ? 'node--seed' : '',
     focused ? 'node--focus' : '',
     selected ? 'node--selected' : '',
   ].join(' ');
@@ -121,12 +149,21 @@ function NodeBox({ box, seed, focused, selected, onOpen }: { box: Box; seed: boo
   return (
     <button
       data-node={node.id}
+      draggable={!seed && node.id !== 'root'}
+      onDragStart={(event) => event.dataTransfer.setData('text/dyscover-node', node.id)}
       className={cls}
       style={{ left: box.x, top: box.y, width: box.w, minHeight: box.h }}
-      onClick={() => !seed && onOpen(node.id)}
-      aria-label={node.status === 'corrected' ? `${node.label} (corrected)` : node.label}
+      onClick={() => onOpen(node.id)}
+      onKeyDown={(event) => {
+        if (!event.altKey || node.id === 'root') return;
+        const offset = { ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20] }[event.key];
+        if (!offset) return;
+        event.preventDefault();
+        onMove(node.id, Math.max(0, box.x + offset[0]), Math.max(0, box.y + offset[1]));
+      }}
+      aria-label={`${node.label}${node.pendingRemoval ? ' (proposed removal)' : node.status === 'corrected' ? ' (corrected)' : node.userEdited ? ' (edited)' : node.status === 'new' ? ' (new)' : ''}${node.id !== 'root' ? '. Drag or use Alt and arrow keys to move' : ''}`}
     >
-      {node.status === 'corrected' && node.correction ? (
+      {node.status === 'corrected' && node.correction && !node.pendingRemoval ? (
         <>
           <span className="node__badge">
             <IconPencil size={14} />
@@ -144,7 +181,9 @@ function NodeBox({ box, seed, focused, selected, onOpen }: { box: Box; seed: boo
             <span className="node__label">{node.label}</span>
             {node.subtitle && <span className="node__sub">{node.subtitle}</span>}
           </span>
-          {node.status === 'new' && <span className="node__new">New</span>}
+          {node.pendingRemoval ? <span className="node__removal">Review removal</span>
+            : node.userEdited ? <span className="node__edited">Edited</span>
+              : node.status === 'new' && <span className="node__new">New</span>}
           {!!node.hiddenChildren && <span className="node__more">+{node.hiddenChildren}</span>}
         </>
       )}
@@ -154,16 +193,18 @@ function NodeBox({ box, seed, focused, selected, onOpen }: { box: Box; seed: boo
 
 function Legend() {
   return (
-    <div className="legend">
+    <div className="legend" aria-label="Node colors">
       <span>
-        <i className="legend__swatch legend__swatch--fix" /> Corrected
+        <i className="legend__swatch legend__swatch--normal" /> Default
       </span>
       <span>
-        <i className="legend__swatch legend__swatch--new" /> New from our chat
+        <i className="legend__swatch legend__swatch--new" /> New
       </span>
       <span>
-        <i className="legend__more">+2</i> Hidden — tap to open
+        <i className="legend__swatch legend__swatch--edited" /> Edited
       </span>
+      <span><i className="legend__swatch legend__swatch--fix" /> Corrected</span>
+      <span><i className="legend__swatch legend__swatch--removal" /> Proposed removal</span>
     </div>
   );
 }

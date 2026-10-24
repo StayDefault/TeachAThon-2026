@@ -3,20 +3,22 @@ import { useStore } from '../state/store';
 import { ConceptMap } from '../components/map/ConceptMap';
 import { MaterialBox } from '../components/MaterialBox';
 import { NodePanel } from '../components/NodePanel';
-import { IconChart, IconChat } from '../components/Icons';
+import { ConversationHistory } from '../components/ConversationHistory';
 import './StudyScreen.css';
 
 /** Study: the map grows while the learner talks with the voice model. */
 export function StudyScreen() {
   const { state, dispatch, send } = useStore();
-  const { session, materials, nodes, choices, focusId, openNodeId, boxFlyIn } = state;
+  const { session, materials, nodes, focusId, openNodeId, boxFlyIn } = state;
 
   const openNode = useCallback(
     (nodeId: string) => {
       dispatch({ type: 'ui.openNode', nodeId });
-      send({ type: 'user.node_opened', nodeId });
+      if (nodes.some((node) => node.id === nodeId && node.status === 'new')) {
+        send({ type: 'user.map_edit', op: 'acknowledge', nodeId });
+      }
     },
-    [dispatch, send],
+    [dispatch, nodes, send],
   );
   const clearFocus = useCallback(() => dispatch({ type: 'ui.clearFocus' }), [dispatch]);
 
@@ -24,37 +26,21 @@ export function StudyScreen() {
 
   return (
     <div className="study">
-      <MaterialBox title={session.title} materials={materials} flyIn={boxFlyIn} />
+      <MaterialBox sessionId={session.id} title={session.title} materials={materials} flyIn={boxFlyIn} />
 
-      <ConceptMap nodes={nodes} focusId={focusId} selectedId={openNodeId} onOpen={openNode} onFocusDone={clearFocus} />
-
-      {choices.length > 0 && (
-        <div className="choices">
-          {choices.map((c, i) => (
-            <button
-              key={c.id}
-              className="choice"
-              style={{ animationDelay: `${i * 90}ms` }}
-              onClick={() => {
-                dispatch({ type: 'server', event: { type: 'prompt.clear' } });
-                send({ type: 'user.choice', choiceId: c.id });
-              }}
-            >
-              <span className="choice__icon" aria-hidden="true">
-                {i === 0 ? <IconChart size={22} /> : <IconChat size={22} />}
-              </span>
-              <span className="choice__text">
-                <span className="choice__title">{c.title}</span>
-                {c.subtitle && <span className="choice__sub">{c.subtitle}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <ConceptMap nodes={nodes} focusId={focusId} selectedId={openNodeId} onOpen={openNode} onFocusDone={clearFocus}
+        onMove={(nodeId, x, y) => { dispatch({ type: 'local.mapEdit', op: 'move', nodeId, x, y }); send({ type: 'user.map_edit', op: 'move', nodeId, x, y }); }} />
 
       {openNodeId && (
-        <NodePanel sessionId={session.id} nodeId={openNodeId} onClose={() => dispatch({ type: 'ui.openNode', nodeId: null })} />
+        <NodePanel sessionId={session.id} nodeId={openNodeId} node={nodes.find((node) => node.id === openNodeId)} onClose={() => dispatch({ type: 'ui.openNode', nodeId: null })}
+          onKeep={() => send({ type: 'user.map_edit', op: 'keep', nodeId: openNodeId })}
+          onEdit={(label, summary) => { dispatch({ type: 'local.mapEdit', op: 'rename', nodeId: openNodeId, label }); send({ type: 'user.map_edit', op: 'update', nodeId: openNodeId, label, summary }); }}
+          onAdd={(label) => { const nodeId = crypto.randomUUID().replace(/-/g, '').slice(0, 12); dispatch({ type: 'local.mapEdit', op: 'add', nodeId, parentId: openNodeId, label }); send({ type: 'user.map_edit', op: 'add', nodeId, parentId: openNodeId, label }); }}
+          onRemove={openNodeId === 'root' ? undefined : () => { send({ type: 'user.map_edit', op: 'remove', nodeId: openNodeId }); dispatch({ type: 'local.mapEdit', op: 'remove', nodeId: openNodeId }); dispatch({ type: 'ui.openNode', nodeId: null }); }} />
       )}
+      {state.historyOpen && <ConversationHistory sessionId={session.id}
+        liveMessages={state.messages}
+        onClose={() => dispatch({ type: 'ui.history', open: false })} />}
     </div>
   );
 }

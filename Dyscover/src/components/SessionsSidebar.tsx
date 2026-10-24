@@ -16,13 +16,35 @@ function bucket(iso: string): 'Today' | 'This week' | 'Earlier' {
 export function SessionsSidebar() {
   const { state, dispatch, openPastSession, goHome } = useStore();
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
+  const [error, setError] = useState('');
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
-    if (state.drawerOpen) api.listSessions().then(setSessions).catch(() => setSessions([]));
+    if (state.drawerOpen) {
+      setError('');
+      api.listSessions().then(setSessions).catch((cause: unknown) => {
+        setSessions([]);
+        setError(cause instanceof Error ? cause.message : 'Could not load past sessions.');
+      });
+    }
   }, [state.drawerOpen]);
 
   if (!state.drawerOpen) return null;
   const close = () => dispatch({ type: 'ui.drawer', open: false });
+  const remove = async (s: SessionSummary) => {
+    if (!window.confirm(`Delete “${s.title}” and its uploaded files? This cannot be undone.`)) return;
+    setDeleting(s.id);
+    setError('');
+    try {
+      await api.deleteSession(s.id);
+      setSessions((current) => current?.filter((item) => item.id !== s.id) ?? null);
+      if (state.session?.id === s.id) goHome();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not delete this session.');
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   const groups: Record<string, SessionSummary[]> = {};
   for (const s of sessions ?? []) (groups[bucket(s.updatedAt)] ??= []).push(s);
@@ -45,24 +67,28 @@ export function SessionsSidebar() {
         </div>
         <div className="drawer__list">
           {sessions === null && <p className="drawer__empty">Loading…</p>}
-          {sessions?.length === 0 && <p className="drawer__empty">No sessions yet.</p>}
+          {error && <p className="drawer__empty" role="alert">{error}</p>}
+          {!error && sessions?.length === 0 && <p className="drawer__empty">No sessions yet.</p>}
           {(['Today', 'This week', 'Earlier'] as const).map(
             (g) =>
               groups[g] && (
                 <section key={g}>
                   <h3 className="drawer__group">{g.toUpperCase()}</h3>
                   {groups[g].map((s) => (
-                    <button
-                      key={s.id}
-                      className={`drawer__item ${state.session?.id === s.id ? 'drawer__item--active' : ''}`}
-                      onClick={() => openPastSession(s.id)}
-                    >
-                      <span className="drawer__item-title">{s.title}</span>
-                      <span className="drawer__item-meta">
-                        {s.topic}
-                        {s.durationMin ? ` · ${s.durationMin} min` : ''}
-                      </span>
-                    </button>
+                    <div className="drawer__row" key={s.id}>
+                      <button
+                        className={`drawer__item ${state.session?.id === s.id ? 'drawer__item--active' : ''}`}
+                        onClick={() => openPastSession(s.id).catch((cause: unknown) =>
+                          setError(cause instanceof Error ? cause.message : 'Could not open this session.'))}
+                      >
+                        <span className="drawer__item-title">{s.title}</span>
+                        <span className="drawer__item-meta">
+                          {s.topic}
+                          {s.durationMin ? ` · ${s.durationMin} min` : ''}
+                        </span>
+                      </button>
+                      <button className="drawer__delete" aria-label={`Delete ${s.title}`} disabled={deleting === s.id} onClick={() => void remove(s)}>Delete</button>
+                    </div>
                   ))}
                 </section>
               ),

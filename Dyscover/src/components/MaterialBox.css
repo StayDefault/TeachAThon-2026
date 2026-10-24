@@ -94,6 +94,9 @@
   padding: 8px;
   list-style: none;
   min-width: 240px;
+  max-width: min(340px, calc(100vw - 32px));
+  max-height: min(60vh, 450px);
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: 14px;
@@ -107,6 +110,13 @@
 }
 .mbox__file {
   font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.mbox__link {
+  color: var(--accent);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }
 .mbox__kind {
   font-size: 12px;

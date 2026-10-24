@@ -15,19 +15,24 @@
 
 .captions__assistant {
   margin: 0;
+  width: 100%;
   font-size: 22px;
   line-height: 1.5;
-  text-wrap: balance;
+  text-wrap: wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  max-height: calc(var(--caption-lines, 1) * 1.5em);
 }
 
 .captions__user {
   margin: 0 0 6px;
+  width: 100%;
   font-size: 16px;
   line-height: 1.5;
   color: var(--ink-2);
-}
-.captions__user--final {
-  animation: caption-out 0.6s ease 5s forwards;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  max-height: calc(var(--caption-lines, 1) * 1.5em);
 }
 .captions__you {
   font-size: 12px;
@@ -35,13 +40,6 @@
   letter-spacing: 0.06em;
   color: var(--muted);
   margin-right: 8px;
-}
-
-@keyframes caption-out {
-  to {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
 }
 
 /* node panel open (500px wide + 24px margin on the right) */

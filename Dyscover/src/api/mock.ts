@@ -1,10 +1,9 @@
-import type { ClientEvent, MapNode, Material, MaterialKind, ServerEvent } from '../types';
+import type { ChatMessage, ClientEvent, MapNode, Material, MaterialKind, NodeDetail, ServerEvent } from '../types';
 import type { DysCoverBackend, LiveConnection } from './backend';
 import {
   DEMO_MATERIALS,
   DEMO_SESSIONS,
   FINISHED_MAP,
-  KNOWLEDGE_CHOICES,
   N,
   NODE_DETAILS,
 } from './mockData';
@@ -30,14 +29,25 @@ function labelOf(kind: MaterialKind): string {
 
 export function createMockBackend(): DysCoverBackend {
   const sessions = [...DEMO_SESSIONS];
+  const originals = new Map<string, string>();
+  const sessionMaterials = new Map<string, Material[]>();
+  const sessionNodes = new Map<string, MapNode[]>();
+  const editedDetails = new Map<string, NodeDetail>();
+  const histories = new Map<string, ChatMessage[]>();
+  const initialNodes = (sessionId: string): MapNode[] => sessionId === 's-backprop'
+    ? FINISHED_MAP.map((node) => ({ ...node }))
+    : [{ id: 'root', parentId: null, label: sessions.find((item) => item.id === sessionId)?.title ?? 'Backpropagation',
+         subtitle: sessions.find((item) => item.id === sessionId)?.topic, status: 'normal' }];
   return {
     async createSession(files) {
       await wait(400);
       const materials: Material[] = files.length
-        ? files.map((f, i) => ({ id: `m${i + 1}`, name: f.name, kind: kindOf(f), label: labelOf(kindOf(f)) }))
+        ? files.map((f, i) => ({ id: `m${i + 1}`, name: f.name, kind: kindOf(f), label: labelOf(kindOf(f)), originalAvailable: true }))
         : DEMO_MATERIALS;
       const session = { id: `new-${Date.now()}`, title: 'Backpropagation', topic: 'Neural networks', updatedAt: new Date().toISOString() };
       sessions.unshift(session);
+      sessionMaterials.set(session.id, materials);
+      files.forEach((file, i) => originals.set(`${session.id}/m${i + 1}`, URL.createObjectURL(file)));
       return { session, materials };
     },
 
@@ -48,32 +58,102 @@ export function createMockBackend(): DysCoverBackend {
 
     async getSession(sessionId) {
       await wait(250);
-      const session = sessions.find((s) => s.id === sessionId) ?? sessions[0];
-      const nodes: MapNode[] =
-        session.id === 's-backprop'
-          ? FINISHED_MAP
-          : [{ id: 'root', parentId: null, label: session.title, subtitle: session.topic, status: 'normal' }];
-      return { session, materials: DEMO_MATERIALS, nodes };
+      const session = sessions.find((s) => s.id === sessionId);
+      if (!session) throw new Error('Session not found.');
+      const nodes = sessionNodes.get(sessionId) ?? initialNodes(sessionId);
+      return { session, materials: sessionMaterials.get(sessionId) ?? DEMO_MATERIALS, nodes, messages: histories.get(sessionId) ?? [] };
     },
 
-    async getNodeDetail(_sessionId, nodeId) {
+    materialUrl(sessionId, materialId) {
+      return originals.get(`${sessionId}/${materialId}`) ?? '';
+    },
+
+    async deleteSession(sessionId) {
+      const index = sessions.findIndex((session) => session.id === sessionId);
+      if (index < 0) throw new Error('Session not found.');
+      sessions.splice(index, 1);
+      sessionMaterials.delete(sessionId);
+      histories.delete(sessionId);
+      for (const [key, value] of originals) if (key.startsWith(`${sessionId}/`)) {
+        URL.revokeObjectURL(value);
+        originals.delete(key);
+      }
+    },
+
+    async getNodeDetail(sessionId, nodeId) {
       await wait(200);
+      const edited = editedDetails.get(`${sessionId}/${nodeId}`);
+      if (edited) return edited;
       const d = NODE_DETAILS[nodeId] ?? {
         title: nodeId,
         breadcrumb: [],
         summary: 'No details yet for this node.',
         messages: [],
       };
-      return { nodeId, ...d };
+      const { messages: _messages, ...detail } = d;
+      return { nodeId, ...detail };
+    },
+
+    async getHistory(sessionId) {
+      return histories.get(sessionId) ?? [];
     },
 
     connect(sessionId, onEvent) {
-      return new MockLive(sessionId, onEvent);
+      if (!sessionNodes.has(sessionId)) sessionNodes.set(sessionId, initialNodes(sessionId));
+      if (!histories.has(sessionId)) {
+        const previous = sessionId.startsWith('s-') ? Object.values(NODE_DETAILS).flatMap(detail => detail.messages) : [];
+        histories.set(sessionId, [...new Map(previous.map(item => [item.id, item])).values()].sort((a, b) => a.at.localeCompare(b.at)));
+      }
+      const emit = (event: ServerEvent) => {
+        if (event.type === 'caption' && event.caption.final) {
+          const message = { id: crypto.randomUUID(), role: event.caption.role, text: event.caption.text, at: new Date().toISOString() };
+          histories.get(sessionId)?.push(message);
+          event = { ...event, message };
+        }
+        const nodes = sessionNodes.get(sessionId) ?? [];
+        if (event.type === 'map.reset') sessionNodes.set(sessionId, event.nodes);
+        if (event.type === 'map.add') sessionNodes.set(sessionId, [...nodes.filter((node) => node.id !== event.node.id), event.node]);
+        if (event.type === 'map.update') sessionNodes.set(sessionId, nodes.map((node) => node.id === event.nodeId ? { ...node, ...event.patch } : node));
+        if (event.type === 'map.remove') {
+          const removed = new Set([event.nodeId]);
+          for (let changed = true; changed;) {
+            changed = false;
+            for (const node of nodes) if (node.parentId && removed.has(node.parentId) && !removed.has(node.id)) {
+              removed.add(node.id);
+              changed = true;
+            }
+          }
+          sessionNodes.set(sessionId, nodes.filter((node) => !removed.has(node.id)));
+          for (const id of removed) editedDetails.delete(`${sessionId}/${id}`);
+        }
+        onEvent(event);
+      };
+      const edit = (event: Extract<ClientEvent, { type: 'user.map_edit' }>) => {
+        const nodes = sessionNodes.get(sessionId) ?? [];
+        const node = nodes.find((item) => item.id === event.nodeId);
+        if (event.op === 'add' && event.nodeId && event.parentId && event.label) {
+          emit({ type: 'map.add', node: { id: event.nodeId, parentId: event.parentId, label: event.label, status: 'normal', userEdited: true, order: nodes.filter((item) => item.parentId === event.parentId).length } });
+          editedDetails.set(`${sessionId}/${event.nodeId}`, { nodeId: event.nodeId, title: event.label, breadcrumb: [], summary: event.label, userEdited: true });
+        } else if (event.op === 'acknowledge' && node) {
+          if (node.status === 'new') emit({ type: 'map.update', nodeId: node.id, patch: { status: 'normal' } });
+        } else if (event.op === 'keep' && node) {
+          emit({ type: 'map.update', nodeId: node.id, patch: { pendingRemoval: null } });
+        } else if (event.op === 'remove' && node) {
+          emit({ type: 'map.remove', nodeId: node.id });
+        } else if (event.op === 'move' && node && event.x !== undefined && event.y !== undefined) {
+          emit({ type: 'map.update', nodeId: node.id, patch: { position: { x: event.x, y: event.y } } });
+        } else if (event.op === 'update' && node && event.label && event.summary) {
+          emit({ type: 'map.update', nodeId: node.id, patch: { label: event.label, userEdited: true, status: 'normal', correction: null, pendingRemoval: null } });
+          const previous = editedDetails.get(`${sessionId}/${node.id}`) ?? NODE_DETAILS[node.id];
+          editedDetails.set(`${sessionId}/${node.id}`, { nodeId: node.id, ...previous, title: event.label, summary: event.summary, userEdited: true });
+        }
+      };
+      return new MockLive(sessionId, emit, edit);
     },
   };
 }
 
-type Stage = 'intro' | 'waitingChoice' | 'teaching' | 'free' | 'ended';
+type Stage = 'intro' | 'teaching' | 'free' | 'ended';
 
 class MockLive implements LiveConnection {
   private stage: Stage = 'intro';
@@ -87,6 +167,7 @@ class MockLive implements LiveConnection {
   constructor(
     sessionId: string,
     private emit: (e: ServerEvent) => void,
+    private edit: (e: Extract<ClientEvent, { type: 'user.map_edit' }>) => void,
   ) {
     // Fake loudness so the orb "breathes" with speech.
     this.levelTimer = window.setInterval(() => {
@@ -119,22 +200,22 @@ class MockLive implements LiveConnection {
         this.stage = this.prevStage === 'ended' ? 'free' : this.prevStage;
         this.emit({ type: 'voice.status', status: 'listening' });
         return;
-      case 'user.choice':
-        if (this.stage === 'waitingChoice') this.guard((id) => this.teach(id, event.choiceId));
-        return;
       case 'user.text':
-        if (this.stage === 'waitingChoice') this.guard((id) => this.teach(id, 'know', event.text));
-        else if (this.stage === 'free') this.guard((id) => this.freeReply(id, event.text));
-        return;
-      case 'user.node_opened':
-        if (this.stage === 'free') {
-          const d = NODE_DETAILS[event.nodeId];
-          if (d) this.guard((id) => this.say(id, d.summary));
+        if (this.stage !== 'ended') {
+          this.stage = 'free';
+          this.guard((id) => this.freeReply(id, event.text));
         }
         return;
+      case 'user.node_opened':
+        return;
       case 'user.map_edit':
-        return; // the UI already applied the edit optimistically
+        this.edit(event);
+        return;
     }
+  }
+
+  setInputMode(_mode: 'voice' | 'text') {
+    // The scripted demo has no microphone stream.
   }
 
   close() {
@@ -147,20 +228,17 @@ class MockLive implements LiveConnection {
 
   private async intro(id: number) {
     this.emit({ type: 'voice.status', status: 'connecting' });
+    this.emit({ type: 'map.reset', nodes: [{ ...N.root, status: 'new', subtitle: 'Your map grows from here as we talk' }] });
     await this.pause(id, 500);
-    this.emit({ type: 'map.reset', nodes: [{ ...N.root, subtitle: 'Your map grows from here as we talk' }] });
-    await this.say(id, "I've read all your files. How much do you already know about backpropagation? Just tell me.");
-    this.emit({ type: 'prompt.choices', choices: KNOWLEDGE_CHOICES });
-    this.stage = 'waitingChoice';
+    this.stage = 'teaching';
+    await this.say(id, "I've read all your files. I'll start with a short overview. Ask me anything as we go.");
+    await this.teach(id);
   }
 
-  private async teach(id: number, choiceId: string, typed?: string) {
+  private async teach(id: number) {
     this.stage = 'teaching';
-    this.emit({ type: 'prompt.clear' });
     this.emit({ type: 'map.update', nodeId: 'root', patch: { subtitle: N.root.subtitle } });
 
-    if (choiceId === 'new') {
-      await this.userSays(id, "I'm new to this — guide me from the start.", true);
       await this.say(id, 'No problem. Backprop answers one question: how much did each weight add to the error?');
       this.add(N.forward);
       await this.say(id, "First, the forward pass. Data flows through the network, and we keep each layer's output.");
@@ -171,24 +249,8 @@ class MockLive implements LiveConnection {
       this.add(N.chain);
       this.add(N.update);
       await this.say(id, 'And the chain rule carries that error backwards. Quick check — in your own words, what does backprop do?');
-      this.settle(['forward', 'save', 'loss']);
       await this.pause(id, 1200);
       await this.userSays(id, 'I think backprop is the step that updates the weights.');
-    } else {
-      if (typed) await this.userSays(id, typed, true);
-      else {
-        await this.userSays(id, 'I know a bit — let me explain first.', true);
-        await this.say(id, "Go ahead, I'm listening.");
-        await this.pause(id, 900);
-        await this.userSays(id, 'You run the forward pass, get a loss, then use the chain rule… and I think backprop is the step that updates the weights.');
-      }
-      this.add(N.forward);
-      this.add(N.loss);
-      this.add(N.chain);
-      this.add(N.update);
-      await this.say(id, "Good — you've got the forward pass, the loss and the chain rule.");
-      this.settle(['forward', 'loss']);
-    }
 
     // The correction moment.
     this.emit({ type: 'voice.status', status: 'thinking' });
@@ -203,13 +265,11 @@ class MockLive implements LiveConnection {
     });
     this.emit({ type: 'map.focus', nodeId: 'update' });
     await this.say(id, "Nearly! Backprop finds the gradients — the optimiser updates the weights. I've marked it in orange.");
-    this.settle(['chain']);
     this.add(N.local);
     await this.pause(id, 300);
     this.add(N.back);
     this.emit({ type: 'map.focus', nodeId: 'back' });
     await this.say(id, 'One more idea: each layer passes its gradient back to the one before. Tap any bubble to see where it comes from in your slides.');
-    this.settle(['local']);
     this.stage = 'free';
   }
 
@@ -222,10 +282,6 @@ class MockLive implements LiveConnection {
 
   private add(node: MapNode) {
     this.emit({ type: 'map.add', node });
-  }
-
-  private settle(ids: string[]) {
-    for (const nodeId of ids) this.emit({ type: 'map.update', nodeId, patch: { status: 'normal' } });
   }
 
   /** Assistant speaks: stream caption word by word. */

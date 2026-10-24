@@ -32,8 +32,6 @@ def extract(name, data):
             kind, label = "text", "Text notes"
         elif ext == ".pdf":
             doc = pymupdf.open(stream=data, filetype="pdf")
-            if len(doc) > 30:
-                raise IngestError(f"{name}: use at most 30 pages")
             pages = []
             for page in doc:
                 text = page.get_text().strip()

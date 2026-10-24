@@ -59,7 +59,22 @@
   padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
+}
+.panel__concept {
+  padding: 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.panel__correction {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fix-soft);
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
 }
 .panel__h {
   margin: 0 0 10px;
@@ -80,11 +95,6 @@
 .panel__slide-ctx {
   font-size: 12px;
   color: var(--muted);
-}
-.panel__bar {
-  height: 8px;
-  border-radius: 4px;
-  background: #e4e1d8;
 }
 .panel__quote {
   margin: 2px 0;
@@ -112,9 +122,19 @@
 }
 .panel__summary {
   margin: 0;
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.55;
 }
+.panel__edit { display: flex; flex-direction: column; gap: 12px; }
+.panel__edit form { display: flex; flex-direction: column; gap: 8px; }
+.panel__edit input, .panel__edit textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.panel__edit label { font-size: 14px; font-weight: 600; }
+.panel__edit .btn { min-height: 44px; }
+.panel__remove { color: var(--fix); }
+.panel__source-image { display: block; max-width: 100%; max-height: 320px; object-fit: contain; }
+.panel__source-note { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.panel__deletion { padding: 12px; border: 1px dashed #8a5353; border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
+.panel__deletion p { margin: 0; font-size: 14px; line-height: 1.5; }
 .panel__chat {
   display: flex;
   flex-direction: column;
@@ -124,6 +144,8 @@
   max-width: 85%;
   font-size: 15px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .bubble--user {
   align-self: flex-end;

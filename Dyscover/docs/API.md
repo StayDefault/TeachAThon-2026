@@ -21,13 +21,14 @@ Response `200`:
 {
   "session":   { "id": "s_123", "title": "Backpropagation", "topic": "Neural networks", "updatedAt": "2026-10-21T14:03:00Z" },
   "materials": [
-    { "id": "m1", "name": "Lecture3_Backprop.pdf", "kind": "pdf", "label": "Lecture slides" }
+    { "id": "m1", "name": "Lecture3_Backprop.pdf", "kind": "pdf", "label": "Lecture slides", "originalAvailable": true }
   ]
 }
 ```
 
 - `title` = short topic name the backend infers from the files (shown under the material box and in the sidebar).
 - `kind` ∈ `pdf | image | doc | text`. `label` is a short human description.
+- `originalAvailable` indicates whether the uploaded file can be opened. Older sessions created before file retention may have `false`.
 - The backend should parse/extract text **per page/slide** here (OCR for images), so later answers can cite `page` + `quote`.
 
 ### `GET /api/sessions` — sidebar list
@@ -46,6 +47,14 @@ The UI groups them into Today / This week / Earlier using `updatedAt`.
 { "session": { … }, "materials": [ … ], "nodes": [ MapNode, … ] }
 ```
 
+### `GET /api/sessions/:id/materials/:materialId` — open an original upload
+
+Returns the uploaded file with an inline disposition for PDF, images, and text; other documents download. Requires the session owner's cookie. Returns `404` when the file is unavailable.
+
+### `DELETE /api/sessions/:id` — delete a session
+
+Returns `204` and removes its saved map and original uploads. Returns `404` for missing sessions or sessions owned by another browser.
+
 ### `GET /api/sessions/:id/nodes/:nodeId` — node panel content
 
 ```json
@@ -60,22 +69,28 @@ The UI groups them into Today / This week / Earlier using `updatedAt`.
     "context": "Lecture 3 · Backpropagation",
     "quote": "Each layer's error = the error from the layer after × its own local gradient."
   },
-  "summary": "One or two plain-language sentences.",
-  "messages": [
-    { "id": "c1", "role": "user", "text": "Why does it go backwards?", "at": "…" },
-    { "id": "c2", "role": "assistant", "text": "Each layer needs…", "at": "…", "audioUrl": "/api/audio/c2.mp3" }
-  ]
+  "summary": "Two or three short, source-grounded sentences retained with this concept.",
+  "userEdited": false
 }
 ```
 
 - `quote` must be **verbatim** from the material — it is shown highlighted as "from your slides".
-- `audioUrl` is optional. Without it, the "play" buttons fall back to browser text-to-speech.
+- `source` may be `null` for a learner-created node until its claim has been checked. Image sources show the original image; other sources link to the original file.
+- `userEdited` marks a learner-authored description so it is shown as their note, not as verified teaching content.
+
+### `GET /api/sessions/:id/history` — session conversation
+
+Returns all saved `ChatMessage` objects in conversation order: `{ id, role, text, at, audioUrl? }`. The session snapshot also includes `messages` so reopening restores the transcript immediately. Requires the session owner's cookie. Historical node associations are omitted; new messages are saved at session scope. Node panels do not include conversation messages. The Conversation option merges stored history with live messages using their saved IDs. Replay is explicit; `audioUrl` is optional and falls back to browser speech.
+
+Dragging only changes `position`; it does not mark a node Edited. Content changes remain marked until tutor agreement. A removal review preserves the node's content and takes precedence over conflicting correction fields; pending removals wait for Keep or confirmed deletion.
+
+Saving a content edit or creating a node automatically queues a tutor review. The tutor reviews only that node and returns Agreed, Corrected, or Proposed deletion feedback, saved in the session conversation. Reviews continue when voice is paused and then return text without audio. Moving or opening nodes never triggers a review. A failed review leaves the edit marker in place and reports the error.
 
 ---
 
 ## 2. Live session — WebSocket `GET /api/sessions/:id/live`
 
-Opened as soon as a session starts. Voice is **always on**: there is no push-to-talk.
+Opened as soon as a session starts. Voice mode is hands-free; text mode stops microphone capture until voice mode is selected again. Map edits and new-marker acknowledgements remain available while voice is paused. Captions show one rolling line total for the active speaker and disappear about two seconds after speech ends; the complete transcript remains in Conversation. Caption events may include `message: ChatMessage` with the full saved reply and stable ID, independently of the rolling caption text.
 
 | Frame type | Direction | Content |
 |---|---|---|
@@ -89,11 +104,9 @@ Opened as soon as a session starts. Voice is **always on**: there is no push-to-
 |---|---|---|
 | `voice.status` | `status`: `connecting \| listening \| thinking \| speaking \| ended` | Dock label + orb state. Sending `listening` while audio is playing **cuts playback** (barge-in). |
 | `voice.level` | `level`: 0..1 | Orb size + waveform. Optional — the client already computes levels locally from mic/playback. |
-| `caption` | `caption`: `{ role: "user"\|"assistant", text, final }` | Subtitles. Send the **full text so far** each time (not deltas); set `final: true` on the last one. |
-| `prompt.choices` | `choices`: `[{ id, title, subtitle? }]` | Quick-reply cards above the captions (e.g. "I'm new to this" / "I know a bit"). |
-| `prompt.clear` | — | Hide the cards. |
+| `caption` | `caption`: `{ role: "user"\|"assistant", text, final }` | Subtitles. Send the **full text so far** as speech progresses (not deltas); the UI rolls within one line. Set `final: true` on the last one. |
 | `map.reset` | `nodes`: `MapNode[]` | Replace the whole map (e.g. the first seed node). |
-| `map.add` | `node`: `MapNode` | Add (or replace by id) one node. It slides in; layout re-flows. |
+| `map.add` | `node`: `MapNode` | Add (or replace by id) one node, preserving existing positions. Arrange branches explicitly rebuilds the automatic tree layout, retaining manually placed nodes. |
 | `map.update` | `nodeId`, `patch`: partial `MapNode` | e.g. mark a node `corrected`, clear `new`, rename. |
 | `map.remove` | `nodeId` | Removes the node **and its subtree**. |
 | `map.focus` | `nodeId` | Scroll to the node and pulse it for ~2 s. |
@@ -109,7 +122,10 @@ Opened as soon as a session starts. Voice is **always on**: there is no push-to-
   "status": "corrected",
   "correction": { "said": "backprop updates weights", "actually": "Backprop finds gradients. The optimiser (SGD) updates weights." },
   "hiddenChildren": 0,
-  "order": 3
+  "order": 3,
+  "position": { "x": 520, "y": 180 },
+  "userEdited": true,
+  "pendingRemoval": null
 }
 ```
 
@@ -117,7 +133,10 @@ Rules the UI relies on:
 
 - Exactly **one** node has `parentId: null` (the root/thesis). Root may have a `subtitle`.
 - `label` ≤ ~5 words. Details are **spoken**, not written on the map.
-- `status`: `normal`, `new` (just added — set back to `normal` after the next turn or two), `corrected` (needs `correction`).
+- `status`: `normal`, `new` (system-created; clears when opened), `corrected` (orange, needs `correction`).
+- `userEdited: true` shows a red Edited marker until a source-grounded tutor review agrees. A correction replaces the edit marker with the orange correction style.
+- `pendingRemoval` holds a removal reason. Proposed removals show crosslines and remain in the map until the learner confirms deletion; Keep clears the proposal.
+- `position` is optional and stores a learner-placed pixel position on the map canvas; AI updates preserve it.
 - Start with **5–8 nodes max**; expand only on request. `hiddenChildren > 0` shows a "+N" badge.
 - `order` sorts siblings (ascending).
 
@@ -126,9 +145,8 @@ Rules the UI relies on:
 | `type` | Payload | When |
 |---|---|---|
 | `user.text` | `text` | Learner typed in text mode. Treat exactly like a spoken turn. |
-| `user.choice` | `choiceId` | Learner tapped a quick-reply card. |
-| `user.node_opened` | `nodeId` | Learner opened a node panel. The tutor may briefly explain it. |
-| `user.map_edit` | `op`: `rename\|remove\|add`, `nodeId?`, `parentId?`, `label?` | Learner edited the map by hand (UI applies it optimistically). |
+| `user.node_opened` | `nodeId` | Legacy context event. Opening the node panel is local UI behavior and does not send a live tutor event. |
+| `user.map_edit` | `op`: `rename\|remove\|add\|move\|update\|acknowledge\|keep`, `nodeId?`, `parentId?`, `label?`, `summary?`, `x?`, `y?` | Learner edits the map. `acknowledge` clears New silently; `keep` rejects proposed removal; `remove` confirms deletion of the node and its subtree. Rejected edits receive an error and `map.reset`. |
 | `session.end` | — | Learner tapped the voice area to end. Stop listening and speaking. The client also stops sending mic audio. |
 | `session.resume` | — | Learner tapped again to resume. |
 

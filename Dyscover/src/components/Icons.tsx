@@ -54,6 +54,14 @@ export const IconFit = (p: P) => (
     <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
   </Base>
 );
+export const IconArrange = (p: P) => (
+  <Base {...p}>
+    <rect x="2" y="9" width="5" height="6" rx="1" />
+    <rect x="16" y="3" width="6" height="6" rx="1" />
+    <rect x="16" y="15" width="6" height="6" rx="1" />
+    <path d="M7 12h4V6h5M11 12v6h5" />
+  </Base>
+);
 export const IconClose = (p: P) => (
   <Base strokeWidth={2.2} {...p}>
     <path d="M6 6l12 12M18 6L6 18" />

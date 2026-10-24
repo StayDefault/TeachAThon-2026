@@ -15,6 +15,7 @@
 .header__sessions {
   padding: 0 16px 0 12px;
 }
+.header__left { display: flex; align-items: center; gap: 10px; }
 .header__logo {
   border: 0;
   background: transparent;

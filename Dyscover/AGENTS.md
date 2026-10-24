@@ -28,19 +28,19 @@ npm run build        # type-check + production build
 | `VITE_REQUIRE_LOGIN=true` | require server-backed email/password sign-in even in mock mode (for hosted demos) |
 | `VITE_API_BASE` | backend origin; empty = Vite dev proxy `/api → http://localhost:8000` (see `vite.config.ts`) |
 
-Demo flow to try: **Use demo files → Start studying → "I'm new to this"** and watch (~30 s). Then click any node.
+Demo flow to try: **Use demo files → Start studying** and watch (~30 s). Then click any node or type a question.
 
 ---
 
 ## 2. Product rules (do not break these)
 
-1. **Voice is always on.** No push-to-talk, no "tap to talk". Opening a session starts listening.
-   The only voice control is *end / resume* (tap the voice area of the dock).
+1. **Voice mode is hands-free.** No push-to-talk. Selecting text mode stops microphone capture; returning to voice mode starts it again. The voice area of the dock ends or resumes the session.
 2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. Start with 5–8 nodes; expand on request.
 3. **Corrections are the core feature.** When the learner says something wrong, mark that node `corrected`
    with `said` (struck through) and `actually` (one sentence), focus it, and explain it out loud.
 4. **Everything is grounded in the learner's files.** Every node should have a source (`fileName`, `page`, verbatim `quote`).
-5. **Every spoken word is also on screen** (captions). The learner's own speech is shown small ("YOU …") so they can see they were heard correctly; it can be turned off in the sidebar.
+   Existing map nodes keep their parent, order, label, and saved explanation during ordinary turns. Explicit map edits may change them.
+5. **Every spoken word is also on screen** (captions). Captions roll within one line total, showing the active speaker. The learner's own speech is marked "YOU …" and can be turned off in the sidebar.
 6. Text mode is optional and secondary (dock ratio 1 : 9 voice-first, flips to 9 : 1 when typing).
 7. Dyslexia-friendly UI: Lexend font, off-white board (never pure white page), no italics for body text, short lines, ≥ 44 px touch targets. Keep it.
 
@@ -65,14 +65,15 @@ src/
     level.ts               ← voice loudness (separate tiny store so only the orb re-renders)
   screens/
     HomeScreen.tsx         ← whiteboard, drag & drop, cards fly into the study box
-    StudyScreen.tsx        ← map + quick-reply choices + node panel
+    StudyScreen.tsx        ← map + node panel
   components/
     Header.tsx             ← "Past sessions" (left) · logo (right)
     SessionsSidebar.tsx    ← left drawer (~1/6 width), closed by default
     MaterialBox.tsx        ← study box under the logo; flies in from screen centre
     map/layout.ts          ← pure tidy-tree layout (left → right)
     map/ConceptMap.tsx     ← renders nodes/edges, zoom/fit, focus pulse, dimming
-    NodePanel.tsx          ← quarter-screen panel: source quote, summary, conversation
+    NodePanel.tsx          ← quarter-screen panel: source quote, summary, editing
+    ConversationHistory.tsx ← session-wide conversation drawer
     Captions.tsx           ← live subtitles (assistant big, learner small)
     VoiceDock.tsx, Orb.tsx ← glass dock, iridescent orb that scales with loudness
   styles/global.css        ← design tokens (colours, font, radii) — reuse them
@@ -92,8 +93,9 @@ Full contract with JSON examples: **`docs/API.md`**. Summary:
 | `POST /api/sessions` (multipart `files`) | parse materials per page (OCR images), infer a short topic title, create session |
 | `GET /api/sessions` | list for the sidebar |
 | `GET /api/sessions/:id` | session + materials + current map |
-| `GET /api/sessions/:id/nodes/:nodeId` | node panel: source quote, summary, messages |
-| `WS /api/sessions/:id/live` | always-on voice: binary audio both ways + JSON events |
+| `GET /api/sessions/:id/nodes/:nodeId` | node panel: source quote and summary |
+| `GET /api/sessions/:id/history` | complete session conversation, independent of nodes |
+| `WS /api/sessions/:id/live` | voice-mode audio and JSON events |
 
 Suggested backend design (any language; Python FastAPI or Node are both fine):
 
@@ -103,10 +105,7 @@ Suggested backend design (any language; Python FastAPI or Node are both fine):
 3. **Tutor LLM** with retrieval over the chunks and the **map tools** in `docs/API.md §3`
    (`add_node`, `correct_node`, `rename_node`, `remove_node`, `focus_node`, `offer_choices`).
    Forward every tool call as the matching `map.*` / `prompt.*` event and persist the map.
-4. **Opening of a new session** (what the mock does — reproduce it):
-   `map.reset` with only the root node → say "I've read your files. How much do you already know about <topic>?" →
-   `prompt.choices` ["I'm new to this", "I know a bit"]. New → guide from the start, adding nodes as you go.
-   Know a bit → let them explain, add what they mention, **correct** what's wrong.
+4. **Opening of a new session**: `map.reset` with only the root node, then invite the learner to explain what they know or ask for help. Accept speech or text immediately; infer whether to explain or check understanding from each turn. Mark added nodes `new` and correct misconceptions on the map.
 5. **Barge-in**: when the learner starts speaking, send `voice.status: listening` — the client cuts playback.
 6. `session.end` → stop listening/speaking (the client stops sending audio); `session.resume` → continue.
 

@@ -27,16 +27,17 @@ export interface Layout {
   height: number;
 }
 
-const COL = 340; // column pitch
-const GAP = 24; // vertical gap between sibling subtrees
+const COL = 380;
+const GAP = 28;
+const BRANCH_GAP = 60;
 
 function sizeOf(node: MapNode, depth: number): { w: number; h: number } {
   if (depth === 0) return { w: 250, h: 84 };
   if (node.status === 'corrected') return { w: 290, h: 156 };
-  return { w: 250, h: depth === 1 ? 56 : 52 };
+  return { w: 250, h: 64 };
 }
 
-export function layoutTree(nodes: MapNode[]): Layout {
+export function layoutTree(nodes: MapNode[], previous?: Layout): Layout {
   const root = nodes.find((n) => n.parentId === null);
   if (!root) return { boxes: [], edges: [], width: 0, height: 0 };
 
@@ -65,8 +66,9 @@ export function layoutTree(nodes: MapNode[]): Layout {
     if (children.length === 0) return top + h;
 
     let cursor = top;
-    for (const c of children) cursor = place(c, depth + 1, cursor) + GAP;
-    const bottom = cursor - GAP;
+    const gap = depth === 0 ? BRANCH_GAP : GAP;
+    for (const c of children) cursor = place(c, depth + 1, cursor) + gap;
+    const bottom = cursor - gap;
 
     const first = boxes.get(children[0].id)!;
     const last = boxes.get(children[children.length - 1].id)!;
@@ -80,8 +82,56 @@ export function layoutTree(nodes: MapNode[]): Layout {
     return Math.max(bottom, box.y + h);
   };
 
-  const bottom = place(root, 0, 0);
+  const previousBoxes = new Map(previous?.boxes.map((box) => [box.node.id, box]));
+  const stable = !!previous?.boxes.length && previous.boxes.every((box) => nodes.some((node) => node.id === box.node.id && node.parentId === box.node.parentId && node.order === box.node.order));
+  let bottom: number;
+  if (stable) {
+    for (const node of nodes) {
+      const before = previousBoxes.get(node.id);
+      if (before) boxes.set(node.id, { ...before, node, ...sizeOf(node, before.depth) });
+    }
+    const columns = new Map<number, Box[]>();
+    for (const box of boxes.values()) {
+      const column = columns.get(box.depth) ?? [];
+      column.push(box);
+      columns.set(box.depth, column);
+    }
+    for (const column of columns.values()) {
+      column.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < column.length; i++) {
+        column[i].y = Math.max(column[i].y, column[i - 1].y + column[i - 1].h + GAP);
+      }
+    }
+    const pending = nodes.filter((node) => !boxes.has(node.id));
+    while (pending.length) {
+      const index = pending.findIndex((node) => node.parentId && boxes.has(node.parentId));
+      if (index < 0) break;
+      const node = pending.splice(index, 1)[0];
+      const parent = boxes.get(node.parentId!)!;
+      const depth = parent.depth + 1;
+      const { w, h } = sizeOf(node, depth);
+      let y = Math.max(0, parent.y + (parent.h - h) / 2);
+      const siblings = [...boxes.values()].filter((box) => box.node.parentId === node.parentId);
+      if (siblings.length) y = Math.max(y, ...siblings.map((box) => box.y + box.h + GAP));
+      let collision = true;
+      while (collision) {
+        collision = false;
+        for (const box of boxes.values()) if (box.depth === depth && y < box.y + box.h + GAP && y + h + GAP > box.y) {
+          y = box.y + box.h + GAP;
+          collision = true;
+        }
+      }
+      boxes.set(node.id, { node, depth, x: depth * COL, y, w, h });
+    }
+    bottom = Math.max(...[...boxes.values()].map((box) => box.y + box.h));
+  } else {
+    bottom = place(root, 0, 0);
+  }
 
+  for (const box of boxes.values()) if (box.node.position) {
+    box.x = box.node.position.x;
+    box.y = box.node.position.y;
+  }
   const edges: Edge[] = [];
   for (const b of boxes.values()) {
     if (!b.node.parentId) continue;
@@ -91,13 +141,8 @@ export function layoutTree(nodes: MapNode[]): Layout {
     const y1 = p.y + p.h / 2;
     const x2 = b.x;
     const y2 = b.y + b.h / 2;
-    const mx = x1 + (x2 - x1) / 2;
-    const r = Math.min(10, Math.abs(y2 - y1) / 2);
-    const dir = y2 > y1 ? 1 : -1;
-    const d =
-      Math.abs(y2 - y1) < 1
-        ? `M${x1},${y1} H${x2}`
-        : `M${x1},${y1} H${mx - r} Q${mx},${y1} ${mx},${y1 + dir * r} V${y2 - dir * r} Q${mx},${y2} ${mx + r},${y2} H${x2}`;
+    const bend = Math.max(36, Math.abs(x2 - x1) * 0.45);
+    const d = `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`;
     edges.push({ id: b.node.id, d, tone: b.node.status });
   }
 

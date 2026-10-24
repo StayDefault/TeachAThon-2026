@@ -77,7 +77,8 @@
   color: var(--muted);
 }
 .drawer__item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 10px 12px;
   border: 0;
   border-radius: 12px;
@@ -86,6 +87,22 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.drawer__row {
+  display: flex;
+  align-items: center;
+}
+.drawer__delete {
+  min-width: 58px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-2);
+}
+.drawer__delete:hover {
+  color: #a33;
+  background: var(--chip);
 }
 .drawer__item:hover {
   background: var(--chip);

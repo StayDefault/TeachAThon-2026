@@ -30,14 +30,15 @@ export function HomeScreen() {
   const { startNewSession } = useStore();
   const { speak } = useLocalSpeech();
   const boardRef = useRef<HTMLDivElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [cards, setCards] = useState<Card[]>([]);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<{ id: number; file: File }[]>([]);
   const [gulp, setGulp] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
+  const [fileListOpen, setFileListOpen] = useState(false);
 
   useEffect(() => {
     speak("Hello! Drag your slides, handouts or photos onto the board — I'll pack them into the box and read them.");
@@ -66,7 +67,8 @@ export function HomeScreen() {
       setTimeout(() => setCards((cs) => cs.map((x) => (x.id === card.id ? { ...x, flying: true } : x))), 700 + i * 180);
     });
     const total = files.length + incoming.length;
-    setFiles((f) => [...f, ...incoming]);
+    setFiles((f) => [...f, ...spawn.map(({ id, file }) => ({ id, file }))]);
+    setStartError('');
     setTimeout(
       () => speak(`Got ${total} ${total === 1 ? 'file' : 'files'}. Tap Start when you're ready — or just say "let's start".`),
       900 + spawn.length * 180,
@@ -76,6 +78,14 @@ export function HomeScreen() {
   const onLanded = (id: number) => {
     setCards((cs) => cs.filter((c) => c.id !== id));
     setGulp((g) => g + 1);
+  };
+
+  const removeFile = (id: number) => {
+    setFiles((f) => f.filter((item) => item.id !== id));
+    setCards((cs) => cs.filter((card) => card.id !== id));
+    setStartError('');
+    if (files.length === 1) setFileListOpen(false);
+    boxRef.current?.focus();
   };
 
   const onDrop = (e: DragEvent) => {
@@ -96,7 +106,7 @@ export function HomeScreen() {
     setStarting(true);
     setStartError('');
     try {
-      await startNewSession(files);
+      await startNewSession(files.map(({ file }) => file));
     } catch (error) {
       setStartError(error instanceof Error ? error.message : 'Could not start this session');
       setStarting(false);
@@ -124,13 +134,37 @@ export function HomeScreen() {
         <p>Drop your materials anywhere on the board.</p>
       </div>
 
-      <div ref={boxRef} className="home__box" key={gulp} data-gulp={gulp > 0}>
+      <button ref={boxRef} type="button" className="home__box" key={gulp} data-gulp={gulp > 0}
+        aria-label={files.length ? `Study box: manage ${files.length} selected files` : 'Add study files'}
+        aria-expanded={files.length ? fileListOpen : undefined} aria-controls={files.length ? 'home-file-list' : undefined}
+        onClick={() => files.length ? setFileListOpen((open) => !open) : inputRef.current?.click()}>
         <IconBox size={36} />
         <span className={inBox > 0 ? 'home__count' : 'home__drop'}>
-          {inBox > 0 ? `${inBox} ${inBox === 1 ? 'file' : 'files'}` : dragOver ? 'Drop to add' : 'Drop here'}
+          {inBox > 0 ? `${inBox} ${inBox === 1 ? 'file' : 'files'} · View` : dragOver ? 'Drop to add' : 'Click or drop to add'}
         </span>
-      </div>
+      </button>
       <p className="home__boxlabel">Your study box</p>
+      {fileListOpen && files.length > 0 && (
+        <div id="home-file-list" className="home__filelist" aria-label="Selected study files">
+          <div className="home__filelist-head">
+            <strong>Selected files</strong>
+            <button type="button" onClick={() => { setFileListOpen(false); boxRef.current?.focus(); }} aria-label="Close selected files">Close</button>
+          </div>
+          <ul className="home__files">
+            {files.map(({ id, file }) => (
+              <li key={id}>
+                <span title={file.name}>{file.name}</span>
+                <button type="button" onClick={() => removeFile(id)} disabled={starting} aria-label={`Remove ${file.name}`}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button className="home__filelist-add" type="button" onClick={() => inputRef.current?.click()} disabled={starting}>
+            Add files
+          </button>
+        </div>
+      )}
 
       {cards.map((card) => (
         <div
@@ -166,9 +200,6 @@ export function HomeScreen() {
             e.target.value = '';
           }}
         />
-        <button className="btn btn--lg" onClick={() => inputRef.current?.click()}>
-          Browse files
-        </button>
         {files.length === 0 && isMock ? (
           <button className="btn btn--lg" onClick={useDemoFiles}>
             Use demo files
@@ -179,8 +210,8 @@ export function HomeScreen() {
             <IconArrowRight />
           </button>
         ) : null}
+        {startError && <p role="alert" className="home__error">{startError}</p>}
       </div>
-      {startError && <p role="alert" className="home__error">{startError}</p>}
 
       {/* the dock and captions are rendered by App */}
     </div>

@@ -19,7 +19,7 @@ const LEFT = [0.35, 0.7, 1, 0.75, 0.45];
 const RIGHT = [0.45, 0.75, 1, 0.7, 0.35];
 
 /**
- * The glass dock at the bottom. Voice is ALWAYS ON: there is no "tap to talk".
+ * The glass dock at the bottom. Voice mode is hands-free; text mode stops the mic.
  * - Voice mode (default): keyboard 1 : voice 9. Tapping the voice area ends / resumes the session.
  * - Text mode (optional): input 9 : mini orb 1. Tapping the mini orb returns to voice.
  */

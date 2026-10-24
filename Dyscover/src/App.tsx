@@ -7,6 +7,7 @@ import { VoiceDock } from './components/VoiceDock';
 import { HomeScreen } from './screens/HomeScreen';
 import { StudyScreen } from './screens/StudyScreen';
 import { isMock } from './api';
+import { apiError } from './api/http';
 
 const requiresLogin = !isMock || import.meta.env.VITE_REQUIRE_LOGIN === 'true';
 
@@ -16,7 +17,7 @@ export function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const { state, dispatch, send } = useStore();
+  const { state, dispatch, send, setInputMode } = useStore();
   const inSession = state.screen === 'study';
 
   const toggleSession = () => {
@@ -48,16 +49,12 @@ export function App() {
       const response = await fetch('/api/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }),
       });
-      if (!response.ok) {
-        const error: unknown = await response.json().catch(() => null);
-        const detail = error && typeof error === 'object' && 'detail' in error && typeof error.detail === 'string'
-          ? error.detail : `Sign-in failed (${response.status}).`;
-        throw new Error(detail);
-      }
+      if (!response.ok) throw await apiError(response);
       setPassword('');
       setSignedIn(true);
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : 'Sign-in failed.');
+      setLoginError(error instanceof TypeError ? 'Cannot reach the Dyscover server. Please try again.'
+        : error instanceof Error ? error.message : 'Sign-in failed.');
     }
   };
 
@@ -82,14 +79,14 @@ export function App() {
       <Header />
       {inSession ? <StudyScreen key={state.session?.id} /> : <HomeScreen />}
 
-      <Captions user={state.captions.user} assistant={state.captions.assistant} showUser={state.showUserCaptions} beside={!!state.openNodeId} />
+      <Captions user={state.captions.user} assistant={state.captions.assistant} status={state.voice} showUser={state.showUserCaptions} beside={!!state.openNodeId || state.historyOpen} />
       <VoiceDock
         status={state.voice}
         mode={state.inputMode}
-        onModeChange={(mode) => dispatch({ type: 'ui.inputMode', mode })}
+        onModeChange={setInputMode}
         onToggleSession={toggleSession}
         onSendText={sendText}
-        placeholder={inSession ? 'Ask about the map, or say what’s confusing…' : undefined}
+        placeholder={inSession ? 'Tell me what you know, or ask me to explain…' : undefined}
       />
 
       <SessionsSidebar />

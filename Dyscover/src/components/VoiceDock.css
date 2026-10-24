@@ -17,7 +17,6 @@
   gap: 6px;
   z-index: 20;
 }
-
 .dock__seg {
   flex: 1 1 0%;
   min-width: 56px;

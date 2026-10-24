@@ -1,4 +1,4 @@
-import type { Choice, MapNode, Material, NodeDetail, SessionSummary } from '../types';
+import type { ChatMessage, MapNode, Material, NodeDetail, SessionSummary } from '../types';
 
 /** Demo content: a lecture on backpropagation. Replace freely — nothing else depends on it. */
 
@@ -18,11 +18,6 @@ export const DEMO_SESSIONS: SessionSummary[] = [
   { id: 's-optim', title: 'Optimisers: SGD and Adam', topic: 'Neural networks', updatedAt: daysAgo(5) },
   { id: 's-bayes', title: "Bayes' rule", topic: 'Probability', updatedAt: daysAgo(12) },
   { id: 's-dist', title: 'Common distributions', topic: 'Probability', updatedAt: daysAgo(15) },
-];
-
-export const KNOWLEDGE_CHOICES: Choice[] = [
-  { id: 'new', title: "I'm new to this", subtitle: 'Guide me from the start' },
-  { id: 'know', title: 'I know a bit', subtitle: 'Let me explain it first' },
 ];
 
 export const N = {
@@ -54,7 +49,7 @@ export const FINISHED_MAP: MapNode[] = [
 
 const t = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 
-export const NODE_DETAILS: Record<string, Omit<NodeDetail, 'nodeId'>> = {
+export const NODE_DETAILS: Record<string, Omit<NodeDetail, 'nodeId'> & { messages: ChatMessage[] }> = {
   root: {
     title: 'Backpropagation',
     breadcrumb: [],

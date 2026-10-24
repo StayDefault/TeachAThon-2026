@@ -12,13 +12,14 @@ export interface Material {
   name: string; // file name, e.g. "Lecture3_Backprop.pdf"
   kind: MaterialKind;
   label: string; // short human label, e.g. "Lecture slides"
+  originalAvailable?: boolean;
 }
 
 // ---------- Concept map ----------
 
 /**
  * normal    – ordinary node
- * new       – just added from the conversation (blue outline + "New" tag; clear it after a while)
+ * new       – system-created (blue outline + "New" tag until opened)
  * corrected – the learner had a misconception here; shown in orange with "You said / Actually"
  */
 export type NodeStatus = 'normal' | 'new' | 'corrected';
@@ -32,9 +33,12 @@ export interface MapNode {
   correction?: {
     said: string; // what the learner said, shown struck through
     actually: string; // the correct idea, one short sentence
-  };
+  } | null;
   hiddenChildren?: number; // > 0 shows a "+N" badge (children exist but are collapsed)
   order?: number; // sibling order; lower first
+  position?: { x: number; y: number }; // learner-placed map position
+  userEdited?: boolean;
+  pendingRemoval?: string | null;
 }
 
 // ---------- Node detail (the quarter-screen panel) ----------
@@ -61,7 +65,8 @@ export interface NodeDetail {
   breadcrumb: string[]; // e.g. ["Backpropagation"]
   source?: SourceRef;
   summary: string; // 1–2 plain-language sentences
-  messages: ChatMessage[]; // conversation about this node
+  correction?: { said: string; actually: string };
+  userEdited?: boolean;
 }
 
 // ---------- Sessions ----------
@@ -78,6 +83,7 @@ export interface SessionSnapshot {
   session: SessionSummary;
   materials: Material[];
   nodes: MapNode[];
+  messages?: ChatMessage[];
 }
 
 // ---------- Live voice session ----------
@@ -90,19 +96,11 @@ export interface Caption {
   final: boolean; // false while still streaming
 }
 
-export interface Choice {
-  id: string;
-  title: string;
-  subtitle?: string;
-}
-
 /** Events the backend pushes to the frontend over the live connection. */
 export type ServerEvent =
   | { type: 'voice.status'; status: VoiceStatus }
   | { type: 'voice.level'; level: number } // 0..1, loudness of whoever is talking (drives the orb)
-  | { type: 'caption'; caption: Caption }
-  | { type: 'prompt.choices'; choices: Choice[] } // quick-reply buttons (e.g. "How much do you know?")
-  | { type: 'prompt.clear' }
+  | { type: 'caption'; caption: Caption; message?: ChatMessage }
   | { type: 'map.reset'; nodes: MapNode[] }
   | { type: 'map.add'; node: MapNode }
   | { type: 'map.update'; nodeId: string; patch: Partial<MapNode> }
@@ -113,8 +111,7 @@ export type ServerEvent =
 /** Events the frontend sends to the backend over the live connection. */
 export type ClientEvent =
   | { type: 'user.text'; text: string } // typed message (text mode)
-  | { type: 'user.choice'; choiceId: string }
-  | { type: 'user.node_opened'; nodeId: string } // learner opened a node; the model may talk about it
-  | { type: 'user.map_edit'; op: 'rename' | 'remove' | 'add'; nodeId?: string; parentId?: string; label?: string }
+  | { type: 'user.node_opened'; nodeId: string } // legacy context event; opening the panel does not send it
+  | { type: 'user.map_edit'; op: 'rename' | 'remove' | 'add' | 'move' | 'update' | 'acknowledge' | 'keep'; nodeId?: string; parentId?: string; label?: string; summary?: string; x?: number; y?: number }
   | { type: 'session.end' }
   | { type: 'session.resume' };

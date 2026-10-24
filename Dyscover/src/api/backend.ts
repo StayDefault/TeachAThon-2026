@@ -1,5 +1,6 @@
 import type {
   ClientEvent,
+  ChatMessage,
   Material,
   NodeDetail,
   ServerEvent,
@@ -24,8 +25,14 @@ export interface DysCoverBackend {
   /** Everything needed to reopen a past session. */
   getSession(sessionId: string): Promise<SessionSnapshot>;
 
+  /** Browser URL for an original upload. */
+  materialUrl(sessionId: string, materialId: string): string;
+
+  deleteSession(sessionId: string): Promise<void>;
+
   /** Content of the quarter-screen panel when a node is clicked. */
   getNodeDetail(sessionId: string, nodeId: string): Promise<NodeDetail>;
+  getHistory(sessionId: string): Promise<ChatMessage[]>;
 
   /**
    * Open the live, always-on voice connection for a session.
@@ -37,5 +44,6 @@ export interface DysCoverBackend {
 
 export interface LiveConnection {
   send(event: ClientEvent): void;
+  setInputMode(mode: 'voice' | 'text'): void;
   close(): void;
 }

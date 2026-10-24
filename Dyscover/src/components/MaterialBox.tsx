@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { Material } from '../types';
+import { api } from '../api';
 import { IconBox } from './Icons';
 import './MaterialBox.css';
 
@@ -8,7 +9,7 @@ import './MaterialBox.css';
  * With `flyIn`, it starts big in the middle of the screen (where it sat on Home)
  * and flies into the corner.
  */
-export function MaterialBox({ title, materials, flyIn }: { title: string; materials: Material[]; flyIn: boolean }) {
+export function MaterialBox({ sessionId, title, materials, flyIn }: { sessionId: string; title: string; materials: Material[]; flyIn: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);
   const [vars, setVars] = useState<Record<string, string> | null>(null);
 
@@ -46,7 +47,8 @@ export function MaterialBox({ title, materials, flyIn }: { title: string; materi
         <ul className="mbox__list">
           {materials.map((m) => (
             <li key={m.id}>
-              <span className="mbox__file">{m.name}</span>
+              {m.originalAvailable ? <a className="mbox__file mbox__link" href={api.materialUrl(sessionId, m.id)} target="_blank" rel="noopener noreferrer" aria-label={`Open original ${m.name}`}>{m.name} ↗</a>
+                : <span className="mbox__file">{m.name}</span>}
               <span className="mbox__kind">{m.label}</span>
             </li>
           ))}

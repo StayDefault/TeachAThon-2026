@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { api, type LiveConnection } from '../api';
 import type {
   Caption,
-  Choice,
+  ChatMessage,
   ClientEvent,
   MapNode,
   Material,
@@ -24,9 +24,10 @@ export interface AppState {
   nodes: MapNode[];
   voice: VoiceStatus;
   captions: { user: Caption | null; assistant: Caption | null };
-  choices: Choice[];
+  messages: ChatMessage[];
   focusId: string | null;
   openNodeId: string | null;
+  historyOpen: boolean;
   inputMode: 'voice' | 'text';
   drawerOpen: boolean;
   showUserCaptions: boolean;
@@ -42,9 +43,10 @@ const initialState: AppState = {
   nodes: [],
   voice: 'idle',
   captions: { user: null, assistant: null },
-  choices: [],
+  messages: [],
   focusId: null,
   openNodeId: null,
+  historyOpen: false,
   inputMode: 'voice',
   drawerOpen: false,
   showUserCaptions: true,
@@ -54,16 +56,17 @@ const initialState: AppState = {
 
 type Action =
   | { type: 'server'; event: ServerEvent }
-  | { type: 'session.started'; session: SessionSummary; materials: Material[]; flyIn: boolean; nodes?: MapNode[] }
+  | { type: 'session.started'; session: SessionSummary; materials: Material[]; flyIn: boolean; nodes?: MapNode[]; messages?: ChatMessage[] }
   | { type: 'go.home' }
   | { type: 'ui.inputMode'; mode: 'voice' | 'text' }
   | { type: 'ui.drawer'; open: boolean }
   | { type: 'ui.openNode'; nodeId: string | null }
+  | { type: 'ui.history'; open: boolean }
   | { type: 'ui.userCaptions'; show: boolean }
   | { type: 'ui.clearFocus' }
   | { type: 'local.caption'; caption: Caption }
   | { type: 'local.voice'; status: VoiceStatus }
-  | { type: 'local.mapEdit'; op: 'rename' | 'remove'; nodeId: string; label?: string };
+  | { type: 'local.mapEdit'; op: 'rename' | 'remove' | 'add' | 'move'; nodeId: string; label?: string; parentId?: string; x?: number; y?: number };
 
 function removeSubtree(nodes: MapNode[], id: string): MapNode[] {
   const doomed = new Set([id]);
@@ -87,11 +90,7 @@ function applyServer(state: AppState, e: ServerEvent): AppState {
     case 'voice.level':
       return state; // handled outside the reducer (see level.ts)
     case 'caption':
-      return { ...state, captions: { ...state.captions, [e.caption.role]: e.caption } };
-    case 'prompt.choices':
-      return { ...state, choices: e.choices };
-    case 'prompt.clear':
-      return { ...state, choices: [] };
+      return { ...state, captions: { ...state.captions, [e.caption.role]: e.caption }, messages: e.message && !state.messages.some(item => item.id === e.message!.id) ? [...state.messages, e.message] : state.messages };
     case 'map.reset':
       return { ...state, nodes: e.nodes };
     case 'map.add': {
@@ -124,11 +123,13 @@ function reducer(state: AppState, a: Action): AppState {
         session: a.session,
         materials: a.materials,
         nodes: a.nodes ?? [],
-        choices: [],
         captions: { user: null, assistant: null },
+        messages: a.messages ?? [],
         openNodeId: null,
+        historyOpen: false,
         drawerOpen: false,
         boxFlyIn: a.flyIn,
+        error: null,
       };
     case 'go.home':
       return { ...initialState, showUserCaptions: state.showUserCaptions, inputMode: state.inputMode };
@@ -137,7 +138,9 @@ function reducer(state: AppState, a: Action): AppState {
     case 'ui.drawer':
       return { ...state, drawerOpen: a.open };
     case 'ui.openNode':
-      return { ...state, openNodeId: a.nodeId };
+      return { ...state, openNodeId: a.nodeId, historyOpen: false, nodes: state.nodes.map((node) => node.id === a.nodeId && node.status === 'new' ? { ...node, status: 'normal' } : node) };
+    case 'ui.history':
+      return { ...state, historyOpen: a.open, openNodeId: a.open ? null : state.openNodeId };
     case 'ui.userCaptions':
       return { ...state, showUserCaptions: a.show };
     case 'ui.clearFocus':
@@ -148,7 +151,9 @@ function reducer(state: AppState, a: Action): AppState {
       return { ...state, voice: a.status };
     case 'local.mapEdit':
       if (a.op === 'remove') return { ...state, nodes: removeSubtree(state.nodes, a.nodeId) };
-      return { ...state, nodes: state.nodes.map((n) => (n.id === a.nodeId ? { ...n, label: a.label ?? n.label } : n)) };
+      if (a.op === 'add') return { ...state, nodes: [...state.nodes, { id: a.nodeId, parentId: a.parentId ?? 'root', label: a.label ?? '', status: 'normal', userEdited: true, order: state.nodes.filter((node) => node.parentId === (a.parentId ?? 'root')).length }] };
+      if (a.op === 'move') return { ...state, nodes: state.nodes.map((n) => n.id === a.nodeId ? { ...n, position: { x: a.x ?? 0, y: a.y ?? 0 } } : n) };
+      return { ...state, nodes: state.nodes.map((n) => (n.id === a.nodeId ? { ...n, label: a.label ?? n.label, userEdited: true, status: 'normal', correction: null, pendingRemoval: null } : n)) };
   }
 }
 
@@ -159,6 +164,7 @@ interface Store {
   dispatch: React.Dispatch<Action>;
   /** Send an event over the live connection (no-op when not connected). */
   send: (event: ClientEvent) => void;
+  setInputMode: (mode: 'voice' | 'text') => void;
   startNewSession: (files: File[]) => Promise<void>;
   openPastSession: (sessionId: string) => Promise<void>;
   goHome: () => void;
@@ -169,6 +175,7 @@ const Ctx = createContext<Store | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const conn = useRef<LiveConnection | null>(null);
+  const inputMode = useRef<'voice' | 'text'>('voice');
 
   const connect = useCallback((sessionId: string) => {
     conn.current?.close();
@@ -176,11 +183,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (event.type === 'voice.level') setLevel(event.level);
       else dispatch({ type: 'server', event });
     });
+    conn.current.setInputMode(inputMode.current);
   }, []);
 
   useEffect(() => () => conn.current?.close(), []);
 
   const send = useCallback((event: ClientEvent) => conn.current?.send(event), []);
+  const setInputMode = useCallback((mode: 'voice' | 'text') => {
+    inputMode.current = mode;
+    conn.current?.setInputMode(mode);
+    if (mode === 'text' && state.voice === 'ended' && conn.current) {
+      // Resume typed turns only after text mode has stopped microphone capture.
+      conn.current.send({ type: 'session.resume' });
+      dispatch({ type: 'local.voice', status: 'listening' });
+    }
+    dispatch({ type: 'ui.inputMode', mode });
+  }, [state.voice]);
 
   const startNewSession = useCallback(
     async (files: File[]) => {
@@ -194,7 +212,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const openPastSession = useCallback(
     async (sessionId: string) => {
       const snap: SessionSnapshot = await api.getSession(sessionId);
-      dispatch({ type: 'session.started', session: snap.session, materials: snap.materials, nodes: snap.nodes, flyIn: false });
+      dispatch({ type: 'session.started', session: snap.session, materials: snap.materials, nodes: snap.nodes, messages: snap.messages, flyIn: false });
       connect(snap.session.id);
     },
     [connect],
@@ -208,8 +226,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ state, dispatch, send, startNewSession, openPastSession, goHome }),
-    [state, send, startNewSession, openPastSession, goHome],
+    () => ({ state, dispatch, send, setInputMode, startNewSession, openPastSession, goHome }),
+    [state, send, setInputMode, startNewSession, openPastSession, goHome],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
