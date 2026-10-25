@@ -19,8 +19,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from ai import AIError, plan, speak, transcribe
-from agent import edit_scope
+from ai import AIError, plan, speak, summarize, transcribe
+from context import RECENT, summary_due
+from state import action_text, commit, ensure, progress, validate_lesson
 from auth import COOKIE, MAX_AGE, check_credentials, configured, issue, owner
 from ingest import IngestError, chunks_for, extract
 from store import delete_session, get, get_material, list_sessions, save, save_materials
@@ -48,7 +49,7 @@ async def checked_plan(session, text, mode, initial=False, review_node_id=None):
                 text = f"Review only node {review_node_id}. Its saved label is {before_review[0]!r}; its saved description is {before_review[1]!r}. Check this exact content against the material."
         snapshot = copy.deepcopy(session)
         started = time.monotonic()
-        proposal = await asyncio.to_thread(plan, snapshot, text, mode, feedback)
+        proposal = await asyncio.to_thread(plan, snapshot, text, mode, feedback, review_node_id)
         try:
             if session["nodes"] != snapshot["nodes"] or session["details"] != snapshot["details"]:
                 raise PlanError("The map changed while the tutor was thinking. Please retry.", "use the current saved map; the previous map changed during processing")
@@ -70,14 +71,40 @@ async def checked_plan(session, text, mode, initial=False, review_node_id=None):
                     correction = {"said": item.get("said"), "actually": item.get("actually")}
                     if before is None or (item["id"] != review_node_id and (item.get("review", "none") != "none" or (item.get("status") == "corrected" and correction != before.get("correction")))):
                         raise PlanError("The tutor changed another node during review", "review only the requested node and leave every other node unchanged")
-            result = apply_plan(session, proposal, initial=initial, allow_restructure=mode in ("rename", "move", "restructure"))
+            try:
+                lesson = validate_lesson(session, proposal.get("lesson", [])) if initial else None
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PlanError("AI returned a lesson plan that could not be checked against the uploaded material", str(exc)) from None
+            answer, events = apply_plan(session, proposal, initial=initial, allow_restructure=not initial)
+            if initial:
+                session.update(lesson=lesson, focus=lesson[0]["id"] if lesson else None, opening=answer)
+            elif "staged" in proposal:
+                events += commit(session, proposal["staged"])
             log.info("Tutor plan mode=%s elapsed_ms=%s", mode, round((time.monotonic() - started) * 1000))
-            return result
+            return answer, events
         except PlanError as exc:
             log.warning("Rejected AI map for %s: %s", mode, exc.reason)
             if attempt:
                 raise
             feedback = exc.reason
+
+
+def refresh_summary(session):
+    """Fold messages that have left the tutor's recent window into the running summary, in the background."""
+    if not summary_due(session):
+        return
+    end = len(session["messages"]) - RECENT
+    older = session["messages"][session.get("summaryUpTo", 0):end]
+
+    async def work():
+        try:
+            text = await asyncio.to_thread(summarize, session, older)
+            session.update(summary=text, summaryUpTo=end)
+            save(session)
+        except AIError as exc:
+            log.warning("Summary refresh failed: %s", exc.message)
+
+    asyncio.get_running_loop().create_task(work())
 
 
 @app.middleware("http")
@@ -150,6 +177,7 @@ async def create_session(request: Request, files: list[UploadFile] = File(...)):
         session = {"owner": request.state.owner,
                    "session": {"id": uuid.uuid4().hex, "title": "", "topic": "", "updatedAt": ""},
                    "materials": materials, "chunks": chunks, "nodes": [], "details": {}, "messages": [], "turns": 0}
+        ensure(session)
         await checked_plan(session, "", "init", initial=True)
         save(session)
         save_materials(session["session"]["id"], originals)
@@ -170,7 +198,8 @@ def sessions(request: Request):
 @app.get("/api/sessions/{session_id}")
 def session_snapshot(session_id: str, request: Request):
     session = required_session(session_id, request.state.owner)
-    return {"session": session["session"], "nodes": session["nodes"],
+    return {"session": session["session"], "nodes": session["nodes"], "edges": session["edges"],
+            "lesson": {key: value for key, value in progress(session).items() if key != "type"},
             "messages": [{key: value for key, value in item.items() if key != "nodeId"} for item in session["messages"]],
             "materials": [dict(item, originalAvailable=get_material(session_id, item["id"]) is not None)
                           for item in session["materials"]]}
@@ -239,7 +268,7 @@ async def live(websocket: WebSocket, session_id: str):
         return
     if os.environ.get("DYSCOVER_VOICE_MODE", "chained").lower() == "live":
         from live_voice import serve
-        await serve(websocket, session, checked_plan)
+        await serve(websocket, session, checked_plan, refresh_summary)
         return
     send_lock = asyncio.Lock()
     segmenter = Segmenter()
@@ -303,13 +332,12 @@ async def live(websocket: WebSocket, session_id: str):
         await emit({"type": "voice.status", "status": "thinking"})
         try:
             session["selectedNodeId"] = selected_node_id
-            action, _ = edit_scope(session, text)
-            mode = action or "turn"
-            answer, events = await checked_plan(session, text, mode)
+            answer, events = await checked_plan(session, text, "turn")
             session["turns"] += 1
             save(session)
             for event in events:
                 await emit(event)
+            refresh_summary(session)
             await say(answer)
         except (AIError, PlanError) as exc:
             await emit({"type": "error", "message": getattr(exc, "message", str(exc))})
@@ -379,9 +407,11 @@ async def live(websocket: WebSocket, session_id: str):
 
     async def opening():
         await emit({"type": "map.reset", "nodes": session["nodes"]})
+        await emit({"type": "map.edges", "edges": session["edges"]})
+        await emit(progress(session))
         await emit({"type": "voice.status", "status": "listening"})
         if session["turns"] == 0:
-            await say(f"I've read your files. Tell me what you know about {session['session']['title']}, or ask me to explain it.")
+            await say(session.get("opening") or f"I've read your files. Tell me what you know about {session['session']['title']}, or ask me to explain it.")
         else:
             await say("Welcome back. Tell me what you know, or ask what you'd like to explore next.")
 
@@ -427,6 +457,17 @@ async def live(websocket: WebSocket, session_id: str):
                 text = event.get("text")
                 if not isinstance(text, str):
                     await emit({"type": "error", "message": "Text is required"})
+                    continue
+                if task in review_parents:
+                    task = asyncio.create_task(queued_turn(task, text))
+                else:
+                    if task and not task.done():
+                        task.cancel()
+                    task = asyncio.create_task(turn(text))
+            elif kind == "user.action":
+                text = action_text(session, event)
+                if not text:
+                    await emit({"type": "error", "message": "That topic is no longer on your map"})
                     continue
                 if task in review_parents:
                     task = asyncio.create_task(queued_turn(task, text))

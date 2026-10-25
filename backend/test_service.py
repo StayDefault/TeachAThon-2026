@@ -17,7 +17,6 @@ import pymupdf
 
 import ai
 import app
-from agent import edit_scope
 import store
 from ingest import chunks_for, extract
 from tutor import PlanError, apply_plan, manual_edit
@@ -32,16 +31,7 @@ NEXT = {"title": "Photosynthesis", "topic": "Plant biology", "answer": "Light pr
                          "status": "new", "said": "", "actually": "", "summary": "Light powers this process.", "sourceId": "c1"}]}
 
 
-def agent_response(final):
-    def respond(path, body):
-        if body.get("tool_choice") == {"type": "function", "name": "search_materials"}:
-            return {"status": "completed", "output": [{"type": "function_call", "name": "search_materials",
-                    "call_id": "search_test", "arguments": '{"query":"light"}'}]}
-        if body.get("tool_choice") == {"type": "function", "name": "expand_branch"}:
-            return {"status": "completed", "output": [{"type": "function_call", "name": "expand_branch",
-                    "call_id": "expand_test", "arguments": '{"nodes":[]}'}]}
-        return final
-    return respond
+OPENING = 7  # map.reset, map.edges, lesson.update, listening, speaking, caption, listening
 
 
 class ServiceTest(unittest.TestCase):
@@ -155,9 +145,9 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", return_value=NEXT):
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                opening = [ws.receive_json() for _ in range(5)]
+                opening = [ws.receive_json() for _ in range(OPENING)]
                 self.assertEqual(opening[0]["type"], "map.reset")
-                self.assertEqual(opening[3]["type"], "caption")
+                self.assertEqual(opening[5]["type"], "caption")
                 ws.send_json({"type": "user.text", "text": "What does light do?"})
                 events = []
                 while not any(event["type"] == "map.add" for event in events):
@@ -174,7 +164,7 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", return_value=NEXT) as generate:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5):
+                for _ in range(OPENING):
                     ws.receive_json()
                 ws.send_json({"type": "session.end"})
                 self.assertEqual(ws.receive_json(), {"type": "voice.status", "status": "ended"})
@@ -190,15 +180,15 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", return_value=NEXT) as generate:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                opening = [ws.receive_json() for _ in range(5)]
-                self.assertEqual(opening[3]["type"], "caption")
+                opening = [ws.receive_json() for _ in range(OPENING)]
+                self.assertEqual(opening[5]["type"], "caption")
                 ws.send_json({"type": "user.text", "text": "I think plants need light"})
                 self.assertEqual(ws.receive_json()["type"], "caption")
                 while ws.receive_json()["type"] != "map.add":
                     pass
                 self.assertEqual(generate.call_args.args[2], "turn")
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                reopened = [ws.receive_json() for _ in range(5)]
+                reopened = [ws.receive_json() for _ in range(OPENING)]
                 self.assertEqual(reopened[0]["type"], "map.reset")
                 ws.send_json({"type": "user.text", "text": "Tell me more"})
                 self.assertEqual(ws.receive_json()["type"], "caption")
@@ -207,7 +197,7 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         with patch.object(app, "speak", return_value=b"") as speaking, patch.object(app, "plan", return_value=NEXT) as generate:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5):
+                for _ in range(OPENING):
                     ws.receive_json()
                 ws.send_json({"type": "user.node_opened", "nodeId": "root"})
                 ws.send_json({"type": "user.map_edit", "op": "acknowledge", "nodeId": "root"})
@@ -283,14 +273,6 @@ class ServiceTest(unittest.TestCase):
         apply_plan(session, changed, allow_restructure=True)
         self.assertEqual(session["nodes"][1]["label"], "Sunlight")
 
-    def test_explicit_map_edit_phrase_is_recognized(self):
-        scope = lambda text: edit_scope({"nodes": []}, text)[0]
-        self.assertEqual(scope("Please move the Light node under Water"), "move")
-        self.assertEqual(scope("Reorganise my concept map"), "move")
-        self.assertIsNone(scope("Explain how light helps plants"))
-        self.assertIsNone(scope("How does the weight change at each node?"))
-        self.assertIsNone(scope("Can you put the loss in simple words?"))
-
     def test_manual_edits_persist_through_later_ai_turns(self):
         sid = self.create()
         session = store.get(sid)
@@ -357,7 +339,7 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         response = {"status": "completed", "output": [{"type": "message", "content": [
             {"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
-        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
+        with patch.object(ai, "request", return_value=response) as send:
             result = ai.plan(store.get(sid), "Light matters", "turn")
         self.assertEqual(result["answer"], NEXT["answer"])
         self.assertEqual([n["id"] for n in result["nodes"]], ["root"])
@@ -403,9 +385,9 @@ class ServiceTest(unittest.TestCase):
         apply_plan(session, NEXT)
         manual_edit(session, {"op": "move", "nodeId": "light", "x": 450, "y": 300})
         response = {"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
-        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
+        with patch.object(ai, "request", return_value=response) as send:
             ai.plan(session, "Explain the next topic", "turn")
-        supplied = json.loads(send.call_args.args[1]["input"][0]["content"])["current_nodes"]
+        supplied = json.loads(send.call_args.args[1]["input"][1]["content"])["map"]["nodes"]
         self.assertTrue(all("position" not in node for node in supplied))
         self.assertFalse(supplied[1].get("userEdited"))
 
@@ -413,8 +395,8 @@ class ServiceTest(unittest.TestCase):
         sid = self.create()
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", return_value=NEXT):
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                opening = [ws.receive_json() for _ in range(5)]
-                self.assertIn("message", opening[3])
+                opening = [ws.receive_json() for _ in range(OPENING)]
+                self.assertIn("message", opening[5])
                 ws.send_json({"type": "user.text", "text": "What does light do?"})
                 user = ws.receive_json()
                 self.assertEqual(user["message"]["role"], "user")
@@ -440,7 +422,7 @@ class ServiceTest(unittest.TestCase):
         removal = dict(NEXT, nodes=[ROOT, dict(NEXT["nodes"][1], review="remove", reviewReason="This duplicates another idea.")])
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", side_effect=[invented, removal]) as generate:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5): ws.receive_json()
+                for _ in range(OPENING): ws.receive_json()
                 ws.send_json({"type": "user.text", "text": "Remove the Light energy node."})
                 while True:
                     event = ws.receive_json()
@@ -530,18 +512,6 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(session["nodes"][1]["userEdited"])
         self.assertNotIn("correction", session["nodes"][1])
 
-    def test_missing_content_requests_map_explanations_without_explain_back(self):
-        sid = self.create()
-        response = {"status": "completed", "output": [{"type": "message", "content": [
-            {"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
-        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
-            for text in ("missing content", "expand on anything we haven't covered yet", "I don't know how to proceed"):
-                with self.subTest(text=text):
-                    ai.plan(store.get(sid), text, "turn")
-                    body = send.call_args.args[1]
-                    self.assertTrue(json.loads(body["input"][0]["content"])["explore_uncovered"])
-                    self.assertIn("map them immediately", body["instructions"])
-
     def test_viewed_and_edited_markers_survive_ai_updates(self):
         sid = self.create()
         session = store.get(sid)
@@ -564,7 +534,7 @@ class ServiceTest(unittest.TestCase):
         store.save(session)
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", side_effect=ai.AIError("Review temporarily unavailable")):
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5):
+                for _ in range(OPENING):
                     ws.receive_json()
                 ws.send_json({"type": "session.end"})
                 self.assertEqual(ws.receive_json()["status"], "ended")
@@ -602,7 +572,7 @@ class ServiceTest(unittest.TestCase):
                 reply = dict(NEXT, nodes=[ROOT, item])
                 with patch.object(app, "speak", return_value=b"") as speak_call, patch.object(app, "plan", return_value=reply) as generate:
                     with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                        for _ in range(5): ws.receive_json()
+                        for _ in range(OPENING): ws.receive_json()
                         ws.send_json({"type": "session.end"})
                         self.assertEqual(ws.receive_json()["status"], "ended")
                         ws.send_json({"type": "user.map_edit", "op": "update", "nodeId": "light", "label": "Light energy", "summary": note})
@@ -631,7 +601,7 @@ class ServiceTest(unittest.TestCase):
         apply_plan(session, NEXT)
         manual_edit(session, {"op": "update", "nodeId": "light", "label": "Light energy", "summary": "Original note."})
         calls = []
-        def generate(current, text, mode, feedback):
+        def generate(current, text, mode, feedback, review_id):
             calls.append(text)
             if len(calls) == 1:
                 session["details"]["light"]["summary"] = "Revised note."
@@ -647,7 +617,7 @@ class ServiceTest(unittest.TestCase):
         proposal = dict(NEXT, nodes=[ROOT, dict(NEXT["nodes"][1], id="own", label="Own idea", summary="Own idea", status="normal", review="remove", reviewReason="This idea is not supported by the lesson.")])
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", return_value=proposal) as generate:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5): ws.receive_json()
+                for _ in range(OPENING): ws.receive_json()
                 ws.send_json({"type": "user.map_edit", "op": "add", "nodeId": "own", "parentId": "root", "label": "Own idea"})
                 while True:
                     event = ws.receive_json()
@@ -663,7 +633,7 @@ class ServiceTest(unittest.TestCase):
         store.save(session)
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan") as generate:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5): ws.receive_json()
+                for _ in range(OPENING): ws.receive_json()
                 ws.send_json({"type": "user.map_edit", "op": "move", "nodeId": "light", "x": 600, "y": 200})
                 self.assertEqual(ws.receive_json()["type"], "map.update")
                 ws.send_json({"type": "session.end"})
@@ -682,7 +652,7 @@ class ServiceTest(unittest.TestCase):
             return reply
         with patch.object(app, "speak", return_value=b"") as speak_call, patch.object(app, "plan", side_effect=generate):
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5): ws.receive_json()
+                for _ in range(OPENING): ws.receive_json()
                 ws.send_json({"type": "user.map_edit", "op": "update", "nodeId": "light", "label": "Light energy", "summary": "Light powers this process."})
                 self.assertEqual(ws.receive_json()["type"], "map.update")
                 self.assertEqual(ws.receive_json()["status"], "thinking")
@@ -710,7 +680,7 @@ class ServiceTest(unittest.TestCase):
             return replies.pop(0)
         with patch.object(app, "speak", return_value=b""), patch.object(app, "plan", side_effect=generate) as plan_call:
             with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
-                for _ in range(5): ws.receive_json()
+                for _ in range(OPENING): ws.receive_json()
                 ws.send_json({"type": "user.map_edit", "op": "update", "nodeId": "light", "label": "Light energy", "summary": "Light powers this process."})
                 self.assertEqual(ws.receive_json()["type"], "map.update")
                 self.assertEqual(ws.receive_json()["status"], "thinking")
@@ -725,24 +695,6 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(answers[0].startswith("Agreed:"))
         self.assertEqual(plan_call.call_count, 2)
         self.assertFalse(store.get(sid)["nodes"][1]["userEdited"])
-
-    def test_direct_help_request_gets_explanation_intent(self):
-        sid = self.create()
-        session = store.get(sid)
-        session["messages"].append({"role": "assistant", "text": "How does light help photosynthesis?"})
-        response = {"status": "completed", "output": [{"type": "message", "content": [
-            {"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
-        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
-            for text in ("how", "don't know much about that", "no idea", "explain for me"):
-                with self.subTest(text=text):
-                    ai.plan(session, text, "turn")
-                    body = send.call_args.args[1]
-                    payload = json.loads(body["input"][0]["content"])
-                    self.assertTrue(payload["learner_needs_explanation"])
-                    self.assertEqual(payload["recent_messages"][-1]["text"], "How does light help photosynthesis?")
-                    self.assertIn("directly answer", body["instructions"])
-            ai.plan(session, "Plants use light to make sugars", "turn")
-            self.assertFalse(json.loads(send.call_args.args[1]["input"][0]["content"])["learner_needs_explanation"])
 
     def test_correction_and_manual_edit_events(self):
         sid = self.create()
