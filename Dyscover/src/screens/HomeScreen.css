@@ -261,7 +261,12 @@
 }
 .home__error {
   flex-basis: 100%;
+  max-width: 560px;
   color: #8b1e1e;
-  margin: 12px 0;
+  margin: 12px auto 0;
+  padding: 12px 18px;
+  border: 1px solid #e8c2c2;
+  border-radius: 12px;
+  background: var(--surface);
   text-align: center;
 }

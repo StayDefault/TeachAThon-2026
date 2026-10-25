@@ -202,11 +202,11 @@ export function HomeScreen() {
         {startError && <p role="alert" className="home__error">{startError}</p>}
       </div>
 
-      <ol className="home__guide" aria-label="How DysCover works">
+      {!startError && <ol className="home__guide" aria-label="How DysCover works">
         <li><span>01</span><strong>Add your materials</strong><p>Bring your notes, slides, or a photo.</p></li>
         <li><span>02</span><strong>Talk it through</strong><p>Explore the ideas in conversation.</p></li>
         <li><span>03</span><strong>Build your map</strong><p>See how the concepts connect.</p></li>
-      </ol>
+      </ol>}
 
     </div>
   );
