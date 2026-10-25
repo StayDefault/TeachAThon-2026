@@ -4,7 +4,7 @@ import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/components/map/layout.ts', import.meta.url), 'utf8');
 const javascript = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
-const { layoutTree } = await import(`data:text/javascript,${encodeURIComponent(javascript)}`);
+const { crossLinks, layoutTree } = await import(`data:text/javascript,${encodeURIComponent(javascript)}`);
 
 const root = { id: 'root', parentId: null, label: 'Root', status: 'normal', order: 0 };
 const first = { id: 'first', parentId: 'root', label: 'First', status: 'new', order: 0 };
@@ -45,3 +45,10 @@ for (const id of ['root', 'first']) {
 }
 const siblings = wide.boxes.filter(box => box.node.parentId === 'root').sort((a, b) => a.y - b.y);
 for (let i = 1; i < siblings.length; i++) assert.ok(siblings[i].y >= siblings[i - 1].y + siblings[i - 1].h);
+const links = crossLinks(grouped.boxes, [{ id: 'e1', from: 'a1', to: 'b1', label: 'causes' }, { id: 'gone', from: 'a1', to: 'missing', label: 'x' }]);
+assert.equal(links.length, 1);
+assert.match(links[0].d, /^M.* Q/);
+assert.ok(links[0].y > get('a1').y && links[0].y < get('b1').y + get('b1').h);
+const understoodBox = layoutTree([root, { ...first, mastery: 'understood', learnerWords: 'my words' }]).boxes.find(box => box.node.id === 'first');
+assert.ok(understoodBox.h > 64);
+

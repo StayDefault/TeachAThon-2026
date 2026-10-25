@@ -4,12 +4,13 @@ import { ConceptMap } from '../components/map/ConceptMap';
 import { MaterialBox } from '../components/MaterialBox';
 import { NodePanel } from '../components/NodePanel';
 import { ConversationHistory } from '../components/ConversationHistory';
+import { LessonProgress } from '../components/LessonProgress';
 import './StudyScreen.css';
 
 /** Study: the map grows while the learner talks with the voice model. */
 export function StudyScreen() {
   const { state, dispatch, send } = useStore();
-  const { session, materials, nodes, focusId, openNodeId, boxFlyIn } = state;
+  const { session, materials, nodes, edges, lesson, focusId, openNodeId, boxFlyIn } = state;
   useEffect(() => {
     send({ type: 'user.node_opened', nodeId: openNodeId ?? '' });
   }, [openNodeId, send]);
@@ -31,15 +32,17 @@ export function StudyScreen() {
     <div className="study">
       <MaterialBox sessionId={session.id} title={session.title} materials={materials} flyIn={boxFlyIn} />
 
-      <ConceptMap nodes={nodes} focusId={focusId} selectedId={openNodeId} onOpen={openNode} onFocusDone={clearFocus}
+      <LessonProgress lesson={lesson} onLearn={(planId) => send({ type: 'user.action', action: 'learn', planId })} />
+
+      <ConceptMap nodes={nodes} edges={edges} focusId={focusId} selectedId={openNodeId} onOpen={openNode} onFocusDone={clearFocus}
         onMove={(nodeId, x, y) => { dispatch({ type: 'local.mapEdit', op: 'move', nodeId, x, y }); send({ type: 'user.map_edit', op: 'move', nodeId, x, y }); }} />
 
       {openNodeId && (
         <NodePanel sessionId={session.id} nodeId={openNodeId} node={nodes.find((node) => node.id === openNodeId)} onClose={() => dispatch({ type: 'ui.openNode', nodeId: null })}
           childNodes={nodes.filter(node => node.parentId === openNodeId)}
           onSelect={openNode}
-          onExpand={() => send({ type: 'user.text', text: `Expand node ${openNodeId}` })}
-          onLearn={() => send({ type: 'user.text', text: `Help me learn about ${nodes.find(node => node.id === openNodeId)?.label ?? 'this topic'} from the material. Explain it, then ask one short comprehension question.` })}
+          onExpand={() => send({ type: 'user.action', action: 'expand', nodeId: openNodeId })}
+          onLearn={() => send({ type: 'user.action', action: 'learn', nodeId: openNodeId })}
           onKeep={() => send({ type: 'user.map_edit', op: 'keep', nodeId: openNodeId })}
           onEdit={(label, summary) => { dispatch({ type: 'local.mapEdit', op: 'rename', nodeId: openNodeId, label }); send({ type: 'user.map_edit', op: 'update', nodeId: openNodeId, label, summary }); }}
           onAdd={(label) => { const nodeId = crypto.randomUUID().replace(/-/g, '').slice(0, 12); dispatch({ type: 'local.mapEdit', op: 'add', nodeId, parentId: openNodeId, label }); send({ type: 'user.map_edit', op: 'add', nodeId, parentId: openNodeId, label }); }}

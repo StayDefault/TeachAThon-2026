@@ -24,6 +24,14 @@ export interface Material {
  */
 export type NodeStatus = 'normal' | 'new' | 'corrected';
 
+/**
+ * How well the learner understands a concept (independent of status):
+ * introduced – explained to the learner; shown paler until they show understanding
+ * understood – the learner explained it correctly; shows their own words
+ * review     – not yet understood after a couple of tries, or skipped; revisit later
+ */
+export type Mastery = 'introduced' | 'understood' | 'review';
+
 export interface MapNode {
   id: string;
   parentId: string | null; // exactly one node has parentId === null (the root / thesis)
@@ -31,7 +39,7 @@ export interface MapNode {
   subtitle?: string; // optional one-liner, used on the root
   status: NodeStatus;
   correction?: {
-    said: string; // what the learner said, shown struck through
+    said: string; // what the learner said, quoted (never struck through)
     actually: string; // the correct idea, one short sentence
   } | null;
   hiddenChildren?: number; // > 0 shows a "+N" badge (children exist but are collapsed)
@@ -39,6 +47,32 @@ export interface MapNode {
   position?: { x: number; y: number }; // learner-placed map position
   userEdited?: boolean;
   pendingRemoval?: string | null;
+  planId?: string; // lesson concept this node represents
+  mastery?: Mastery;
+  learnerWords?: string; // the learner's own explanation, shown when understood
+}
+
+/** A labelled cross-link between two nodes in different branches. */
+export interface MapEdge {
+  id: string;
+  from: string;
+  to: string;
+  label: string; // short relation, e.g. "causes"
+}
+
+// ---------- Lesson plan ----------
+
+export type LessonState = 'unseen' | 'introduced' | 'attempted' | 'understood' | 'review' | 'skipped';
+
+export interface LessonItem {
+  id: string;
+  title: string;
+  state: LessonState;
+}
+
+export interface LessonProgress {
+  items: LessonItem[];
+  focusId: string | null; // the concept being studied now
 }
 
 // ---------- Node detail (the quarter-screen panel) ----------
@@ -83,6 +117,8 @@ export interface SessionSnapshot {
   session: SessionSummary;
   materials: Material[];
   nodes: MapNode[];
+  edges?: MapEdge[];
+  lesson?: LessonProgress;
   messages?: ChatMessage[];
 }
 
@@ -109,12 +145,15 @@ export type ServerEvent =
   | { type: 'map.remove'; nodeId: string }
   | { type: 'map.focus'; nodeId: string } // briefly highlight / scroll to a node
   | { type: 'map.expanded'; nodeId: string } // show this branch's children and the expand/learn actions
+  | { type: 'map.edges'; edges: MapEdge[] } // replace all cross-links
+  | ({ type: 'lesson.update' } & LessonProgress)
   | { type: 'error'; message: string };
 
 /** Events the frontend sends to the backend over the live connection. */
 export type ClientEvent =
   | { type: 'user.text'; text: string } // typed message (text mode)
   | { type: 'user.node_opened'; nodeId: string } // selection context only; never starts speech or a tutor turn
+  | { type: 'user.action'; action: 'learn' | 'expand'; nodeId?: string; planId?: string } // a button press the tutor handles like a request
   | { type: 'user.map_edit'; op: 'rename' | 'remove' | 'add' | 'move' | 'update' | 'acknowledge' | 'keep'; nodeId?: string; parentId?: string; label?: string; summary?: string; x?: number; y?: number }
   | { type: 'session.end' }
   | { type: 'session.resume' };

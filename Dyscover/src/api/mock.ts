@@ -1,9 +1,13 @@
-import type { ChatMessage, ClientEvent, MapNode, Material, MaterialKind, NodeDetail, ServerEvent } from '../types';
+import type { ChatMessage, ClientEvent, LessonItem, LessonProgress, MapEdge, MapNode, Material, MaterialKind, NodeDetail, ServerEvent } from '../types';
 import type { DysCoverBackend, LiveConnection } from './backend';
 import {
   DEMO_MATERIALS,
   DEMO_SESSIONS,
+  FINISHED_LESSON,
   FINISHED_MAP,
+  FORWARD_WORDS,
+  GRADIENT_LINK,
+  LESSON,
   N,
   NODE_DETAILS,
 } from './mockData';
@@ -34,6 +38,8 @@ export function createMockBackend(): DysCoverBackend {
   const sessionNodes = new Map<string, MapNode[]>();
   const editedDetails = new Map<string, NodeDetail>();
   const histories = new Map<string, ChatMessage[]>();
+  const sessionEdges = new Map<string, MapEdge[]>([['s-backprop', [GRADIENT_LINK]]]);
+  const sessionLessons = new Map<string, LessonProgress>([['s-backprop', FINISHED_LESSON]]);
   const initialNodes = (sessionId: string): MapNode[] => sessionId === 's-backprop'
     ? FINISHED_MAP.map((node) => ({ ...node }))
     : [{ id: 'root', parentId: null, label: sessions.find((item) => item.id === sessionId)?.title ?? 'Backpropagation',
@@ -61,7 +67,8 @@ export function createMockBackend(): DysCoverBackend {
       const session = sessions.find((s) => s.id === sessionId);
       if (!session) throw new Error('Session not found.');
       const nodes = sessionNodes.get(sessionId) ?? initialNodes(sessionId);
-      return { session, materials: sessionMaterials.get(sessionId) ?? DEMO_MATERIALS, nodes, messages: histories.get(sessionId) ?? [] };
+      return { session, materials: sessionMaterials.get(sessionId) ?? DEMO_MATERIALS, nodes, edges: sessionEdges.get(sessionId) ?? [],
+        lesson: sessionLessons.get(sessionId), messages: histories.get(sessionId) ?? [] };
     },
 
     materialUrl(sessionId, materialId) {
@@ -112,6 +119,8 @@ export function createMockBackend(): DysCoverBackend {
         }
         const nodes = sessionNodes.get(sessionId) ?? [];
         if (event.type === 'map.reset') sessionNodes.set(sessionId, event.nodes);
+        if (event.type === 'map.edges') sessionEdges.set(sessionId, event.edges);
+        if (event.type === 'lesson.update') sessionLessons.set(sessionId, { items: event.items, focusId: event.focusId });
         if (event.type === 'map.add') sessionNodes.set(sessionId, [...nodes.filter((node) => node.id !== event.node.id), event.node]);
         if (event.type === 'map.update') sessionNodes.set(sessionId, nodes.map((node) => node.id === event.nodeId ? { ...node, ...event.patch } : node));
         if (event.type === 'map.remove') {
@@ -206,6 +215,13 @@ class MockLive implements LiveConnection {
           this.guard((id) => this.freeReply(id, event.text));
         }
         return;
+      case 'user.action':
+        if (this.stage !== 'ended') {
+          this.stage = 'free';
+          const title = LESSON.find((item) => item.id === event.planId)?.title ?? event.nodeId ?? 'this topic';
+          this.guard((id) => this.freeReply(id, event.action === 'expand' ? `Expand ${title} into its subtopics.` : `Teach me about ${title}.`));
+        }
+        return;
       case 'user.node_opened':
         return;
       case 'user.map_edit':
@@ -229,47 +245,62 @@ class MockLive implements LiveConnection {
   private async intro(id: number) {
     this.emit({ type: 'voice.status', status: 'connecting' });
     this.emit({ type: 'map.reset', nodes: [{ ...N.root, status: 'new', subtitle: 'Your map grows from here as we talk' }] });
+    this.emit({ type: 'map.edges', edges: [] });
+    this.progress({}, 'p1');
     await this.pause(id, 500);
     this.stage = 'teaching';
-    await this.say(id, "I've read all your files. I'll start with a short overview. Ask me anything as we go.");
+    await this.say(id, "I've read all your files. We'll go through four ideas, one at a time. First, the forward pass.");
     await this.teach(id);
+  }
+
+  private lesson: LessonItem[] = LESSON;
+
+  private progress(states: Record<string, LessonItem['state']>, focusId: string) {
+    this.lesson = this.lesson.map((item) => (states[item.id] ? { ...item, state: states[item.id] } : item));
+    this.emit({ type: 'lesson.update', items: this.lesson, focusId });
   }
 
   private async teach(id: number) {
     this.stage = 'teaching';
     this.emit({ type: 'map.update', nodeId: 'root', patch: { subtitle: N.root.subtitle } });
 
-      await this.say(id, 'No problem. Backprop answers one question: how much did each weight add to the error?');
-      this.add(N.forward);
-      await this.say(id, "First, the forward pass. Data flows through the network, and we keep each layer's output.");
-      this.add(N.save);
-      await this.pause(id, 400);
-      this.add(N.loss);
-      await this.say(id, 'Then a loss measures how wrong we were.');
-      this.add(N.chain);
-      this.add(N.update);
-      await this.say(id, 'And the chain rule carries that error backwards. Quick check — in your own words, what does backprop do?');
-      await this.pause(id, 1200);
-      await this.userSays(id, 'I think backprop is the step that updates the weights.');
+    this.add(N.forward);
+    this.progress({ p1: 'introduced' }, 'p1');
+    await this.say(id, "Data flows through the network one layer at a time, and we keep each layer's output for later.");
+    this.add(N.save);
+    await this.say(id, 'Try saying it back in your own words. What happens in the forward pass?');
+    await this.pause(id, 1000);
+    await this.userSays(id, `I think ${FORWARD_WORDS}.`);
 
-    // The correction moment.
+    // Understood: the node fills in with the learner's own words, and the lesson moves on.
+    this.emit({ type: 'map.update', nodeId: 'forward', patch: { mastery: 'understood', learnerWords: FORWARD_WORDS } });
+    this.emit({ type: 'map.focus', nodeId: 'forward' });
+    this.add(N.loss);
+    this.progress({ p1: 'understood', p2: 'introduced' }, 'p2');
+    await this.say(id, "Exactly, that's it. Next, the loss: one number that says how wrong the prediction was.");
+    this.add(N.chain);
+    this.progress({ p3: 'introduced' }, 'p3');
+    await this.say(id, 'Then the chain rule carries that error backwards, layer by layer. Quick check: what does backprop do?');
+    await this.pause(id, 1200);
+    await this.userSays(id, 'I think backprop is the step that updates the weights.');
+
+    // A misconception: corrected on the map, explained a different way.
     this.emit({ type: 'voice.status', status: 'thinking' });
     await this.pause(id, 700);
-    this.emit({
-      type: 'map.update',
-      nodeId: 'update',
-      patch: {
-        status: 'corrected',
-        correction: { said: 'backprop updates weights', actually: 'Backprop finds gradients. The optimiser (SGD) updates weights.' },
-      },
+    this.add({
+      ...N.update,
+      status: 'corrected',
+      correction: { said: 'backprop is the step that updates the weights', actually: 'Backprop finds gradients. The optimiser (SGD) updates weights.' },
     });
+    this.progress({ p4: 'attempted' }, 'p4');
     this.emit({ type: 'map.focus', nodeId: 'update' });
-    await this.say(id, "Nearly! Backprop finds the gradients — the optimiser updates the weights. I've marked it in orange.");
+    await this.say(id, "Close. Think of backprop as the satnav that finds the direction, and the optimiser as the driver who moves. I've marked it in orange.");
     this.add(N.local);
     await this.pause(id, 300);
     this.add(N.back);
+    this.emit({ type: 'map.edges', edges: [GRADIENT_LINK] });
     this.emit({ type: 'map.focus', nodeId: 'back' });
-    await this.say(id, 'One more idea: each layer passes its gradient back to the one before. Tap any bubble to see where it comes from in your slides.');
+    await this.say(id, 'Each layer passes its gradient back, and those gradients feed the weight update. Tap any bubble to see where it comes from.');
     this.stage = 'free';
   }
 

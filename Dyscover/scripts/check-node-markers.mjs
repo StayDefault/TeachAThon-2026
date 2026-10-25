@@ -10,7 +10,7 @@ function load(path, exported, hooks = {}) {
   const exports = {};
   const jsx = (type, props) => ({ type, props });
   const require = (name) => name === 'react'
-    ? { createContext: () => ({}), useEffect() {}, ...hooks }
+    ? { createContext: () => ({}), useEffect() {}, useRef: (current) => ({ current }), useState: (value) => [value, () => {}], ...hooks }
     : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : {};
   new Function('require', 'exports', javascript)(require, exports);
   return exports[exported];
@@ -30,7 +30,20 @@ const text = (element) => element == null || typeof element === 'boolean' ? ''
   : typeof element === 'string' ? element
     : Array.isArray(element) ? element.map(text).join(' ') : text(element.props?.children);
 const render = (node) => NodeBox({ box: { node, depth: 1, x: 0, y: 0, w: 250, h: 56 }, onOpen() {}, onMove() {} });
-assert.deepEqual(Legend().props.children.map(item => text(item).trim()), ['Default', 'New', 'Edited', 'Corrected', 'Proposed removal']);
+const legendOf = (nodes) => Legend({ nodes }).props.children.map(item => text(item).trim());
+assert.deepEqual(legendOf([root, child]), ['Explained', 'New']);
+assert.deepEqual(legendOf([root, { ...child, status: 'corrected', mastery: 'understood' }, { ...child, id: 'x', status: 'normal', userEdited: true, pendingRemoval: 'No.', mastery: 'review' }]),
+  ['Explained', 'Understood', 'Review later', 'Corrected', 'Edited', 'Proposed removal']);
+const understood = render({ ...child, status: 'normal', mastery: 'understood', learnerWords: 'it passes the error back' });
+assert.match(understood.props.className, /node--understood/);
+assert.match(text(understood), /it passes the error back/);
+assert.match(text(render({ ...child, status: 'normal', mastery: 'review' })), /Review/);
+assert.doesNotMatch(render({ ...child, mastery: 'introduced' }).props.className, /node--introduced/);
+const linked = reducer({ nodes: [root, child], edges: [] }, { type: 'server', event: { type: 'map.edges', edges: [{ id: 'e1', from: 'root', to: 'child', label: 'has' }] } });
+assert.equal(linked.edges.length, 1);
+assert.equal(reducer(linked, { type: 'server', event: { type: 'map.remove', nodeId: 'child' } }).edges.length, 0);
+const lesson = reducer({ nodes: [] }, { type: 'server', event: { type: 'lesson.update', items: [{ id: 'p1', title: 'Phase', state: 'understood' }], focusId: 'p1' } });
+assert.deepEqual(lesson.lesson, { items: [{ id: 'p1', title: 'Phase', state: 'understood' }], focusId: 'p1' });
 
 assert.match(text(render(child)), /New/);
 state = reducer(state, { type: 'ui.openNode', nodeId: 'child' });

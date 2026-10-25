@@ -1,4 +1,4 @@
-import type { ChatMessage, MapNode, Material, NodeDetail, SessionSummary } from '../types';
+import type { ChatMessage, LessonItem, LessonProgress, MapEdge, MapNode, Material, NodeDetail, SessionSummary } from '../types';
 
 /** Demo content: a lecture on backpropagation. Replace freely — nothing else depends on it. */
 
@@ -22,19 +22,28 @@ export const DEMO_SESSIONS: SessionSummary[] = [
 
 export const N = {
   root: { id: 'root', parentId: null, label: 'Backpropagation', subtitle: "Find each weight's share of the error", status: 'normal', order: 0 },
-  forward: { id: 'forward', parentId: 'root', label: 'Forward pass', status: 'new', order: 0 },
-  save: { id: 'save', parentId: 'forward', label: "Save each layer's output", status: 'new', order: 0 },
-  loss: { id: 'loss', parentId: 'root', label: 'Loss', status: 'new', hiddenChildren: 2, order: 1 },
-  chain: { id: 'chain', parentId: 'root', label: 'Chain rule', status: 'new', order: 2 },
-  update: { id: 'update', parentId: 'root', label: 'Weight update', status: 'new', order: 3 },
-  local: { id: 'local', parentId: 'chain', label: 'Local gradient per layer', status: 'new', order: 0 },
-  back: { id: 'back', parentId: 'chain', label: 'Pass gradient back', status: 'new', order: 1 },
+  forward: { id: 'forward', parentId: 'root', label: 'Forward pass', status: 'new', order: 0, planId: 'p1', mastery: 'introduced' },
+  save: { id: 'save', parentId: 'forward', label: "Save each layer's output", status: 'new', order: 0, mastery: 'introduced' },
+  loss: { id: 'loss', parentId: 'root', label: 'Loss', status: 'new', order: 1, planId: 'p2', mastery: 'introduced' },
+  chain: { id: 'chain', parentId: 'root', label: 'Chain rule', status: 'new', order: 2, planId: 'p3', mastery: 'introduced' },
+  update: { id: 'update', parentId: 'root', label: 'Weight update', status: 'new', order: 3, planId: 'p4', mastery: 'introduced' },
+  local: { id: 'local', parentId: 'chain', label: 'Local gradient per layer', status: 'new', order: 0, mastery: 'introduced' },
+  back: { id: 'back', parentId: 'chain', label: 'Pass gradient back', status: 'new', order: 1, mastery: 'introduced' },
 } satisfies Record<string, MapNode>;
+
+export const FORWARD_WORDS = 'data goes through the layers and we keep each output';
+export const LESSON: LessonItem[] = [
+  { id: 'p1', title: 'Forward pass', state: 'unseen' },
+  { id: 'p2', title: 'Loss', state: 'unseen' },
+  { id: 'p3', title: 'Chain rule', state: 'unseen' },
+  { id: 'p4', title: 'Weight update', state: 'unseen' },
+];
+export const GRADIENT_LINK: MapEdge = { id: 'e1', from: 'back', to: 'update', label: 'feeds' };
 
 /** The finished map, used when reopening the demo session from the sidebar. */
 export const FINISHED_MAP: MapNode[] = [
   N.root,
-  { ...N.forward, status: 'normal' },
+  { ...N.forward, status: 'normal', mastery: 'understood', learnerWords: FORWARD_WORDS },
   { ...N.save, status: 'normal' },
   { ...N.loss, status: 'normal' },
   { ...N.chain, status: 'normal' },
@@ -46,6 +55,10 @@ export const FINISHED_MAP: MapNode[] = [
   { ...N.local, status: 'normal' },
   { ...N.back, status: 'normal' },
 ];
+export const FINISHED_LESSON: LessonProgress = {
+  items: [{ ...LESSON[0], state: 'understood' }, { ...LESSON[1], state: 'introduced' }, { ...LESSON[2], state: 'introduced' }, { ...LESSON[3], state: 'attempted' }],
+  focusId: 'p4',
+};
 
 const t = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 
