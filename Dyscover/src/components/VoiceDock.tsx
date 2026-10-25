@@ -33,6 +33,7 @@ export function VoiceDock(props: {
 }) {
   const { status, mode, onModeChange, onToggleSession, onSendText } = props;
   const [draft, setDraft] = useState('');
+  const [submitted, setSubmitted] = useState('');
   const ended = status === 'ended';
   const isVoice = mode === 'voice';
 
@@ -40,12 +41,17 @@ export function VoiceDock(props: {
     e.preventDefault();
     const text = draft.trim();
     if (!text) return;
+    setSubmitted(text);
     onSendText(text);
     setDraft('');
   };
 
   return (
-    <div className="dock" role="group" aria-label="Talk to DysCover">
+    <div className={`dock ${!isVoice && submitted ? 'dock--submitted' : ''}`} role="group" aria-label="Talk to DysCover">
+      {!isVoice && submitted && <details className="dock__submitted" aria-label="Your latest submitted message" aria-live="polite">
+        <summary><span>You</span> {submitted}</summary>
+        <p>{submitted}</p>
+      </details>}
       <div className="dock__seg" style={{ flexGrow: isVoice ? 1 : 9 }}>
         {isVoice ? (
           <button className="dock__kbd" onClick={() => onModeChange('text')} aria-label="Switch to typing">

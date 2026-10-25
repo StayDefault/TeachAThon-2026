@@ -19,7 +19,7 @@ export async function apiError(res: Response): Promise<Error> {
  * REST  : POST/GET /api/sessions..., JSON
  * Live  : WebSocket /api/sessions/:id/live
  *           text frames   = JSON ServerEvent / ClientEvent
- *           binary frames = audio (mic PCM16 16 kHz up, assistant PCM16 24 kHz down)
+ *           binary frames = audio (mic PCM16 16 kHz; output 24 kHz chained, 16 kHz Live)
  */
 export function createHttpBackend(base = ''): DysCoverBackend {
   const url = (p: string) => `${base}/api${p}`;
@@ -89,16 +89,25 @@ function connectLive(address: string, onEvent: (e: ServerEvent) => void): LiveCo
   let status: VoiceStatus = 'connecting';
   let assistantPlaying = false;
   let closedByClient = false;
+  let liveAudio = false;
+  let thinking = false;
   const canCapture = () => status !== 'ended';
   onEvent({ type: 'voice.status', status });
 
   // Orb level: the assistant's playback while it talks, otherwise the mic.
-  const player = createPcmPlayer({
-    onLevel: (level) => {
+  const playbackOptions = {
+    onLevel: (level: number) => {
       assistantPlaying = level > 0.02;
       if (assistantPlaying) onEvent({ type: 'voice.level', level });
     },
-  });
+    onPlaybackEnd: () => {
+      if (liveAudio && status !== 'ended') {
+        status = thinking ? 'thinking' : 'listening';
+        onEvent({ type: 'voice.status', status });
+      }
+    },
+  };
+  let player = createPcmPlayer(playbackOptions);
 
   const startVoice = async () => {
     if (mic || micStarting || inputMode !== 'voice' || status === 'ended' || ws.readyState !== WebSocket.OPEN) return;
@@ -125,14 +134,32 @@ function connectLive(address: string, onEvent: (e: ServerEvent) => void): LiveCo
 
   ws.onmessage = (msg) => {
     if (typeof msg.data !== 'string') {
+      if (status === 'ended') return;
+      if (liveAudio) {
+        status = 'speaking';
+        onEvent({ type: 'voice.status', status });
+      }
       player.enqueue(msg.data as ArrayBuffer);
       return;
     }
     const event = JSON.parse(msg.data) as ServerEvent;
+    if (event.type === 'voice.audio') {
+      liveAudio = true;
+      player.close();
+      player = createPcmPlayer({ ...playbackOptions, sampleRate: event.sampleRate });
+    }
+    if (event.type === 'voice.interrupt') player.flush();
     if (event.type === 'voice.status') {
       status = event.status;
+      thinking = status === 'thinking';
+      if (status === 'ended') {
+        mic?.stop();
+        mic = null;
+        player.flush();
+        onEvent({ type: 'voice.level', level: 0 });
+      }
       // Barge-in: when the server says the learner started talking, cut the assistant's audio.
-      if (status === 'listening') player.flush();
+      if (status === 'listening' && !liveAudio) player.flush();
     }
     onEvent(event);
   };
@@ -162,6 +189,7 @@ function connectLive(address: string, onEvent: (e: ServerEvent) => void): LiveCo
         void startVoice();
       }
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+      else if (event.type === 'user.text') onEvent({ type: 'error', message: "Your message wasn't sent because the connection isn't ready. Please try again." });
     },
     setInputMode(mode) {
       inputMode = mode;

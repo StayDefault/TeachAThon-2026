@@ -21,6 +21,7 @@ const NodeBox = load('../src/components/map/ConceptMap.tsx', 'NodeBox');
 const Legend = load('../src/components/map/ConceptMap.tsx', 'Legend');
 const root = { id: 'root', parentId: null, label: 'Root', status: 'normal', order: 0 };
 const child = { id: 'child', parentId: 'root', label: 'Child', status: 'new', order: 0 };
+assert.equal(reducer({ nodes: [] }, { type: 'server', event: { type: 'voice.audio', sampleRate: 16000 } }).liveVoice, true);
 let state = { nodes: [root, child], openNodeId: null };
 const moved = reducer(state, { type: 'local.mapEdit', op: 'move', nodeId: 'child', x: 500, y: 200 });
 assert.equal(moved.nodes[1].userEdited, undefined);
@@ -65,16 +66,48 @@ for (const status of ['speaking', 'listening']) {
   assert.equal(line.props.text, status === 'speaking' ? 'Assistant words' : 'User words');
 }
 
-let deleted = false, kept = false;
+let deleted = false, kept = false, expanded = false, learned = false, selectedBranch = null;
 const detail = { title: 'Child', breadcrumb: [], summary: 'An idea.', messages: [] };
 const NodePanel = load('../src/components/NodePanel.tsx', 'NodePanel', {
   useState: value => [value === null ? detail : value, () => {}],
 });
 const panel = NodePanel({ sessionId: 'test', nodeId: 'child', node: pending,
+  childNodes: [{ ...child, id: 'sub', parentId: 'child', label: 'Subtopic' }],
+  onExpand() { expanded = true; }, onLearn() { learned = true; }, onSelect(nodeId) { selectedBranch = nodeId; },
   onRemove() { deleted = true; }, onKeep() { kept = true; } });
 const elements = element => !element || typeof element !== 'object' ? []
   : Array.isArray(element) ? element.flatMap(elements) : [element, ...elements(element.props?.children)];
+let dockValues = [], dockHook = 0;
+const sentTexts = [];
+const VoiceDock = load('../src/components/VoiceDock.tsx', 'VoiceDock', {
+  useState(initial) { const index = dockHook++; if (dockValues[index] === undefined) dockValues[index] = initial; return [dockValues[index], value => { dockValues[index] = value; }]; },
+});
+const drawDock = (status = 'thinking', mode = 'text') => {
+  dockHook = 0;
+  return VoiceDock({ status, mode, onModeChange() {}, onToggleSession() {}, onSendText(value) { sentTexts.push(value); } });
+};
+elements(drawDock()).find(element => element.type === 'input').props.onChange({ target: { value: '  Explain Java records  ' } });
+elements(drawDock()).find(element => element.type === 'form').props.onSubmit({ preventDefault() {} });
+assert.deepEqual(sentTexts, ['Explain Java records']);
+assert.equal(elements(drawDock()).find(element => element.type === 'input').props.value, '');
+for (const status of ['thinking', 'speaking', 'listening', 'ended']) {
+  const receipt = elements(drawDock(status)).find(element => element.type === 'details');
+  assert.match(text(receipt), /Explain Java records/);
+  assert.equal(receipt.props['aria-live'], 'polite');
+}
+assert.equal(elements(drawDock('listening', 'voice')).some(element => element.type === 'details'), false);
 const buttons = elements(panel).filter(element => element.type === 'button');
+buttons.find(button => button.props['aria-label'] === 'Open subtopic Subtopic').props.onClick();
+assert.equal(selectedBranch, 'sub');
+assert.equal(expanded, false);
+assert.equal(learned, false);
+buttons.find(button => text(button) === 'Expand subtopics').props.onClick();
+assert.equal(expanded, true);
+buttons.find(button => text(button) === 'Learn this topic').props.onClick();
+assert.equal(learned, true);
+const expandedState = reducer({ ...state, openNodeId: null, historyOpen: true }, { type: 'server', event: { type: 'map.expanded', nodeId: 'root' } });
+assert.equal(expandedState.openNodeId, 'root');
+assert.equal(expandedState.historyOpen, false);
 assert.equal(deleted, false);
 buttons.find(button => text(button) === 'Keep node').props.onClick();
 assert.equal(kept, true);
@@ -94,6 +127,9 @@ const captionEvent = { type: 'server', event: { type: 'caption', caption: { role
 messageState = reducer(messageState, captionEvent);
 messageState = reducer(messageState, captionEvent);
 assert.deepEqual(messageState.messages, [savedMessage]);
+const updatedMessage = { ...savedMessage, text: 'Saved full reply with another transcript fragment' };
+messageState = reducer(messageState, { type: 'server', event: { type: 'caption', caption: { role: 'assistant', text: updatedMessage.text, final: false }, message: updatedMessage } });
+assert.deepEqual(messageState.messages, [updatedMessage]);
 const liveHistory = ConversationHistory({ sessionId: 'sample', liveMessages: messageState.messages, onClose() {} });
 assert.match(text(liveHistory), /Saved full reply/);
 

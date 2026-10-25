@@ -81,6 +81,7 @@ export function App() {
 
       <Captions user={state.captions.user} assistant={state.captions.assistant} status={state.voice} showUser={state.showUserCaptions} beside={!!state.openNodeId || state.historyOpen} />
       <VoiceDock
+        key={state.session?.id ?? 'home'}
         status={state.voice}
         mode={state.inputMode}
         onModeChange={setInputMode}

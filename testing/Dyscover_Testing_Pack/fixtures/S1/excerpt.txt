@@ -1,0 +1,4 @@
+Dyscover parser fixture. Fixture ID: S1-TXT. This identifier is test metadata, not a course requirement.
+Derived from assessment-1_0.pdf, PDF page 1. The original PDF remains authoritative.
+
+Required length: 1000 words. Weighting: 40% of the course mark. SEPP coursework is explicitly excluded. The essay asks how the learner's project work might contribute to unintentional harm. Its three components are a concise project description, anticipated harms, and self-reflection on responsibility in a wider stakeholder context.

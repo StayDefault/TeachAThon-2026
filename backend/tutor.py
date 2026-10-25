@@ -4,6 +4,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+MAX_NODES = 200
 
 class PlanError(ValueError):
     def __init__(self, message, reason=None):
@@ -22,7 +23,7 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
             answer = f"I've read your files. How much do you already know about {topic.strip()}?"
         if not 1 <= len(answer.strip()) <= 1500:
             raise ValueError("answer is empty or too long")
-        if not 1 <= len(raw_nodes) <= 20 or (initial and len(raw_nodes) != 1):
+        if not 1 <= len(raw_nodes) <= MAX_NODES or (initial and len(raw_nodes) != 1):
             raise ValueError("the map has an invalid number of nodes; init requires exactly one root")
         if not initial and (title != session["session"]["title"] or topic != session["session"]["topic"]):
             raise ValueError("title and topic changed during an existing session")
@@ -42,7 +43,11 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
                 raise ValueError("a parent ID is invalid")
             if not isinstance(label, str) or not 1 <= len(label.split()) <= 5 or len(label) > 60:
                 raise ValueError("a node label must contain one to five words and at most 60 characters")
-            if status not in ("normal", "new", "corrected") or source_id not in sources:
+            before = existing.get(node_id)
+            unverified = (source_id is None and before and session["details"][node_id].get("sourceId") is None
+                          and label == before["label"] and summary == session["details"][node_id]["summary"]
+                          and status == before["status"] and item.get("review", "none") in ("none", "remove"))
+            if status not in ("normal", "new", "corrected") or (source_id not in sources and not unverified):
                 raise ValueError("a node status or sourceId is invalid; cite an exact supplied passage ID")
             if not initial and node_id not in existing_ids and node_id != "root" and status != "corrected":
                 status = "new"
@@ -71,8 +76,8 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
                     quote = re.sub(r"\s+", " ", said).strip(" .!?").casefold()
                     if not any(quote in re.sub(r"\s+", " ", claim).casefold() for claim in claims):
                         raise ValueError("a correction must quote an actual learner statement or edited note; use review remove for an unsupported system-created node")
-            source = sources[source_id]
-            details[node_id] = {"summary": summary.strip(), "sourceId": source_id,
+            source = sources.get(source_id)
+            details[node_id] = session["details"][node_id].copy() if unverified else {"summary": summary.strip(), "sourceId": source_id,
                                 "source": {"materialId": source["materialId"], "fileName": source["fileName"],
                                            "page": source["page"], "quote": source["text"]}}
             nodes.append(node)
@@ -127,7 +132,7 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
                     nodes.append(retained)
                     details[before["id"]] = session["details"][before["id"]]
                     ids.add(before["id"])
-        if len(nodes) > 20:
+        if len(nodes) > MAX_NODES:
             raise ValueError("the map has too many nodes")
         for before in session["nodes"]:
             removal_claim = rf"\b(?:I suggest|I recommend|I propose|we should|you should|let['’]s)\s+(?:remove|removing|delete|deleting|drop|dropping)\s+(?:the\s+)?[\"'`*]*{re.escape(before['label'])}\b"
@@ -136,6 +141,8 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
                 raise ValueError("the answer proposes deleting a node but its review is not remove; mark that node review remove instead of corrected")
         if "root" not in ids or (initial and nodes[0]["id"] != "root"):
             raise ValueError("the map needs a root node with ID root, first during init")
+        if "expandedNodeId" in proposal and (not isinstance(proposal["expandedNodeId"], str) or proposal["expandedNodeId"] not in ids):
+            raise ValueError("the expanded branch does not exist")
         parents = {node["id"]: node["parentId"] for node in nodes}
         for node_id in ids:
             seen = set()
@@ -146,10 +153,10 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
                 seen.add(cursor)
                 cursor = parents[cursor]
         orders = {}
-        if not initial and not allow_restructure:
+        if not initial:
             for node in nodes:
                 before = existing.get(node["id"])
-                if before:
+                if before and before["parentId"] == node["parentId"]:
                     node["order"] = before.get("order", 0)
                     parent = node["parentId"]
                     orders[parent] = max(orders.get(parent, 0), node["order"] + 1)
@@ -187,6 +194,8 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
         changed = next((node["id"] for node in reversed(nodes) if node["id"] not in old), None)
     if changed and not initial:
         events.append({"type": "map.focus", "nodeId": changed})
+    if not initial and proposal.get("expandedNodeId") in new:
+        events.append({"type": "map.expanded", "nodeId": proposal["expandedNodeId"]})
     session["nodes"] = nodes
     session["details"] = details
     if initial:
@@ -216,7 +225,7 @@ def manual_edit(session, event):
         if parent not in by_id or not isinstance(label, str) or not 1 <= len(label.split()) <= 5 or len(label) > 60:
             raise PlanError("Choose a parent and a short label")
         node_id = node_id if isinstance(node_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,32}", node_id) else uuid.uuid4().hex[:12]
-        if node_id in by_id or len(nodes) >= 20:
+        if node_id in by_id or len(nodes) >= MAX_NODES:
             raise PlanError("Cannot add this node")
         node = {"id": node_id, "parentId": parent, "label": label.strip(), "status": "normal", "userEdited": True,
                 "order": sum(n["parentId"] == parent for n in nodes)}
@@ -236,7 +245,7 @@ def manual_edit(session, event):
         return {"type": "map.update", "nodeId": node_id, "patch": {"pendingRemoval": None}}
     if op == "move":
         x, y = event.get("x"), event.get("y")
-        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 10000 for value in (x, y)):
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 100_000 for value in (x, y)):
             raise PlanError("Choose a valid map position")
         by_id[node_id]["position"] = {"x": round(x), "y": round(y)}
         return {"type": "map.update", "nodeId": node_id, "patch": {"position": by_id[node_id]["position"]}}

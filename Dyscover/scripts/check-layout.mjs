@@ -35,3 +35,13 @@ assert.ok(grouped.edges.every(edge => edge.d.includes(' C') && !edge.d.includes(
 const manuallyPlaced = layoutTree(branches.map(node => node.id === 'a1' ? { ...node, position: { x: 900, y: 440 } } : node));
 assert.equal(manuallyPlaced.boxes.find(box => box.node.id === 'a1').y, 440);
 assert.equal(manuallyPlaced.boxes.find(box => box.node.id === 'a1').x, 900);
+const wideLevel = [root, first, ...Array.from({ length: 198 }, (_, i) => ({ ...second, id: `topic${i}`, order: i + 1 }))];
+const wide = layoutTree(wideLevel, initial);
+assert.equal(wide.boxes.length, 200);
+for (const id of ['root', 'first']) {
+  const before = initial.boxes.find(box => box.node.id === id);
+  const after = wide.boxes.find(box => box.node.id === id);
+  assert.deepEqual([after.x, after.y], [before.x, before.y]);
+}
+const siblings = wide.boxes.filter(box => box.node.parentId === 'root').sort((a, b) => a.y - b.y);
+for (let i = 1; i < siblings.length; i++) assert.ok(siblings[i].y >= siblings[i - 1].y + siblings[i - 1].h);

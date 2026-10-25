@@ -23,6 +23,7 @@ export interface AppState {
   materials: Material[];
   nodes: MapNode[];
   voice: VoiceStatus;
+  liveVoice: boolean;
   captions: { user: Caption | null; assistant: Caption | null };
   messages: ChatMessage[];
   focusId: string | null;
@@ -42,6 +43,7 @@ const initialState: AppState = {
   materials: [],
   nodes: [],
   voice: 'idle',
+  liveVoice: false,
   captions: { user: null, assistant: null },
   messages: [],
   focusId: null,
@@ -85,12 +87,16 @@ function removeSubtree(nodes: MapNode[], id: string): MapNode[] {
 
 function applyServer(state: AppState, e: ServerEvent): AppState {
   switch (e.type) {
+    case 'voice.audio':
+      return { ...state, liveVoice: true };
+    case 'voice.interrupt':
+      return state;
     case 'voice.status':
       return { ...state, voice: e.status, error: e.status === 'thinking' ? null : state.error };
     case 'voice.level':
       return state; // handled outside the reducer (see level.ts)
     case 'caption':
-      return { ...state, captions: { ...state.captions, [e.caption.role]: e.caption }, messages: e.message && !state.messages.some(item => item.id === e.message!.id) ? [...state.messages, e.message] : state.messages };
+      return { ...state, captions: { ...state.captions, [e.caption.role]: e.caption }, messages: e.message ? state.messages.some(item => item.id === e.message!.id) ? state.messages.map(item => item.id === e.message!.id ? e.message! : item) : [...state.messages, e.message] : state.messages };
     case 'map.reset':
       return { ...state, nodes: e.nodes };
     case 'map.add': {
@@ -106,6 +112,8 @@ function applyServer(state: AppState, e: ServerEvent): AppState {
       return { ...state, nodes: removeSubtree(state.nodes, e.nodeId) };
     case 'map.focus':
       return { ...state, focusId: e.nodeId };
+    case 'map.expanded':
+      return { ...state, openNodeId: e.nodeId, historyOpen: false, focusId: e.nodeId };
     case 'error':
       console.warn('[DysCover]', e.message);
       return { ...state, error: e.message };
@@ -120,6 +128,7 @@ function reducer(state: AppState, a: Action): AppState {
       return {
         ...state,
         screen: 'study',
+        liveVoice: false,
         session: a.session,
         materials: a.materials,
         nodes: a.nodes ?? [],
@@ -192,13 +201,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setInputMode = useCallback((mode: 'voice' | 'text') => {
     inputMode.current = mode;
     conn.current?.setInputMode(mode);
-    if (mode === 'text' && state.voice === 'ended' && conn.current) {
+    if (mode === 'text' && state.voice === 'ended' && !state.liveVoice && conn.current) {
       // Resume typed turns only after text mode has stopped microphone capture.
       conn.current.send({ type: 'session.resume' });
       dispatch({ type: 'local.voice', status: 'listening' });
     }
     dispatch({ type: 'ui.inputMode', mode });
-  }, [state.voice]);
+  }, [state.voice, state.liveVoice]);
 
   const startNewSession = useCallback(
     async (files: File[]) => {

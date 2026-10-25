@@ -98,6 +98,8 @@ export interface Caption {
 
 /** Events the backend pushes to the frontend over the live connection. */
 export type ServerEvent =
+  | { type: 'voice.audio'; sampleRate: number }
+  | { type: 'voice.interrupt' }
   | { type: 'voice.status'; status: VoiceStatus }
   | { type: 'voice.level'; level: number } // 0..1, loudness of whoever is talking (drives the orb)
   | { type: 'caption'; caption: Caption; message?: ChatMessage }
@@ -106,12 +108,13 @@ export type ServerEvent =
   | { type: 'map.update'; nodeId: string; patch: Partial<MapNode> }
   | { type: 'map.remove'; nodeId: string }
   | { type: 'map.focus'; nodeId: string } // briefly highlight / scroll to a node
+  | { type: 'map.expanded'; nodeId: string } // show this branch's children and the expand/learn actions
   | { type: 'error'; message: string };
 
 /** Events the frontend sends to the backend over the live connection. */
 export type ClientEvent =
   | { type: 'user.text'; text: string } // typed message (text mode)
-  | { type: 'user.node_opened'; nodeId: string } // legacy context event; opening the panel does not send it
+  | { type: 'user.node_opened'; nodeId: string } // selection context only; never starts speech or a tutor turn
   | { type: 'user.map_edit'; op: 'rename' | 'remove' | 'add' | 'move' | 'update' | 'acknowledge' | 'keep'; nodeId?: string; parentId?: string; label?: string; summary?: string; x?: number; y?: number }
   | { type: 'session.end' }
   | { type: 'session.resume' };

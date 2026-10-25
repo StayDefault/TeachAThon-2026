@@ -9,8 +9,8 @@ import urllib.request
 import uuid
 
 
-TEXT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-TUTOR_MODEL = os.environ.get("OPENAI_TUTOR_MODEL", os.environ.get("OPENAI_MODEL", "gpt-5.4-mini"))
+TEXT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-6.1-sol")
+TUTOR_MODEL = os.environ.get("OPENAI_TUTOR_MODEL", os.environ.get("OPENAI_MODEL", "gpt-6-astra"))
 TRANSCRIBE_MODEL = os.environ.get("OPENAI_TRANSCRIBE_MODEL", "gpt-transcribe")
 # shortcut: the Speech endpoint is deprecated in 2027; move to Realtime before then.
 SPEECH_MODEL = os.environ.get("OPENAI_SPEECH_MODEL", "gpt-4o-mini-tts")
@@ -86,7 +86,9 @@ def response_text(result):
 
 
 def plan(session, message, mode, validation_feedback=None):
+    from agent import expansion_requested
     chunks = session["chunks"]
+    expanding = mode != "init" and expansion_requested(message, session["nodes"])
     explore_uncovered = bool(re.search(r"\b(?:expand|missing|uncovered|not covered|haven't covered|haven’t covered|what next|how to proceed|where to start|what to study|what to do)\b", message, re.I))
     needs_explanation = explore_uncovered or bool(re.search(r"\b(?:how|why|what|explain|show me|tell me|help|no idea|don't know|do not know|dont know|not sure)\b|\?", message, re.I))
     instructions = (
@@ -105,16 +107,16 @@ def plan(session, message, mode, validation_feedback=None):
         "Preserve an existing pendingRemoval until the learner chooses Keep or confirms deletion; do not replace it with a correction. "
         "For all other nodes use review none and an empty reviewReason. Do not repeat a removal proposal after the learner chooses to keep that node unless new evidence warrants it. "
         "Learner-authored descriptions without a source are hypotheses; check them against source_passages before using them as facts. "
-        "Only for mode restructure may you move or rename existing nodes as explicitly requested. Removal always requires learner confirmation. "
+        "Only explicit rename or move tool permissions allow changing existing labels or parents. Removal always requires learner confirmation. "
         "Each node must cite one sourceId from the supplied passages; its summary must be supported by that passage. "
         "Use short labels of at most five words. Speak in short sentences, one idea at a time. "
         "For init, return only one root node with id root and parentId null, and ask how much the learner knows. "
-        "Never add a node only because you explained an idea. Add a new node only when the learner's latest message explains that idea correctly in their own words and source_passages support it. "
-        "Label it with a short phrase taken from the learner's own words. If their explanation mostly repeats your earlier wording, ask one why or example question first and add no node. "
+        "Map each new source-supported idea you explain, even when the learner has not explained it back. Do not make repetition a condition for adding nodes. "
+        "Use concise source-based labels, or the learner's words when accurate. Reuse existing concepts instead of adding duplicates. "
         "Respond to the learner's latest message, using recent_messages for context. "
-        "If learner_needs_explanation is true, directly answer from source_passages, then ask the learner to explain that idea back in their own words. "
+        "If learner_needs_explanation is true, directly answer from source_passages and add cited nodes for the new ideas you explain. A comprehension question is optional after giving help. "
         "If explore_uncovered is true, take the lead: compare source_passages with current_nodes, current_details and recent_messages, "
-        "identify up to three important components not yet covered and explain them briefly without adding nodes. "
+        "identify up to three important components not yet covered, explain them briefly, and add their cited nodes. "
         "Preserve the existing structure. Do not ask which content to explore or how much the learner knows. "
         "If everything in the supplied sources is already covered, say so and recap the next useful connection without inventing missing content. "
         "For short replies like 'how', 'no idea', or 'explain for me', use recent_messages to identify the idea they mean; state your assumption briefly if needed. "
@@ -122,19 +124,29 @@ def plan(session, message, mode, validation_feedback=None):
         "If the learner offers an explanation, check it against source_passages, affirm supported parts, and correct any misconception. "
         "If it is only partly right, add a node for the correct part and ask one question about the missing part. "
         "If it is wrong, explain the idea again in a different way, such as an analogy or example, instead of repeating your earlier wording. "
-        "If the learner asks to explore a concept, explain it and ask them to explain it back; add no node for it yet. "
+        "If the learner asks to explore a concept, explain it and map its supported ideas immediately. Do not require explain-back. "
         "Ask at most one short question per turn. "
         "When they explain, correct misconceptions by setting status corrected, said to their claim, "
-        "and actually to one short supported correction. Add or change at most three nodes per later turn. "
-        "For ordinary questions, keep the map unchanged. "
+        "and actually to one short supported correction. On ordinary turns explain and add or change at most three new ideas. Explicit branch expansion uses one batch and is not limited to three. "
+        "For ordinary questions preserve the existing structure and add matching nodes for new ideas you explain. "
         "Return title and topic unchanged after init. Never invent a sourceId. "
         "For init, return exactly one node with id root, parentId null, and a sourceId copied exactly from source_passages. "
         "The answer field must contain a nonempty reply; only init requires an opening question. "
-        "For each new node, write summary from the learner's correct explanation in two or three short sentences, keeping their wording where possible, fixing spelling, and adding nothing the source does not support. "
+        "For each new node, write a source-grounded summary in two or three short sentences explaining its meaning and purpose. Do not claim a system explanation proves learner understanding. "
         "Use a nonempty summary of at most 600 characters, and keep title and topic under 80 characters."
     )
     if explore_uncovered:
-        instructions += " For this turn, explain the missing components, then ask the learner to explain one of them in their own words. Do not ask them to choose a topic."
+        instructions += " For this turn, explain the missing components and map them immediately. Do not ask them to choose a topic before providing help."
+    if expanding:
+        instructions += (
+            " This is an EXPLICIT MAP EXPANSION request: expand the complete next level of expansion_target_id in one batch. "
+            "Search all source passages, identify ALL relevant missing immediate subtopics, and call expand_branch once with all their cited nodes. "
+            "Do not ask for a correct explanation or ask which topic before expanding. Use concise source-based labels and summaries. "
+            "Each added node must be a direct child of expansion_target_id. Do not recursively generate deeper descendants; the learner chooses those next. "
+            "Preserve every existing label, parent, order, description and position. Never rename or rearrange the map while expanding. "
+            "These New nodes are requested source outlines, not proof the learner understands them. "
+            "If no supported concepts are missing or the map has no room, explain that clearly instead of claiming it expanded."
+        )
     if mode == "review":
         instructions += " This is an automatic content-edit review. Review ONLY the requested node's exact saved label and description, preserving every other node and adding none. Decide agree, corrected, or remove against the uploaded sources. For agree, do not improve or paraphrase the saved content. For corrected, said must quote their saved label or description exactly. Give brief feedback beginning Agreed:, Corrected:, or Proposed deletion:. Ask no follow-up question."
     if validation_feedback:
@@ -144,6 +156,7 @@ def plan(session, message, mode, validation_feedback=None):
         "input": json.dumps({
             "mode": mode, "learner_message": message, "learner_needs_explanation": needs_explanation,
             "explore_uncovered": explore_uncovered,
+            "map_expansion_requested": expanding,
             "source_passages": [{"id": c["id"], "text": c["text"], "file": c["fileName"], "page": c["page"]} for c in chunks],
             "current_session": session["session"], "current_nodes": [{key: value for key, value in node.items() if key != "position"} for node in session["nodes"]],
             "current_details": session["details"], "recent_messages": session["messages"][-8:],
@@ -151,6 +164,11 @@ def plan(session, message, mode, validation_feedback=None):
         "text": {"format": {"type": "json_schema", "name": "dyscover_plan", "strict": True, "schema": PLAN_SCHEMA}},
         "store": False,
     }
+    if TUTOR_MODEL.startswith("gpt-6"):
+        payload["reasoning"] = {"effort": "low"}
+    if mode != "init":
+        from agent import run
+        return run(session, message, mode, payload, request, NODE_SCHEMA, AIError)
     try:
         return json.loads(response_text(request("responses", payload)))
     except (ValueError, TypeError):
@@ -159,7 +177,7 @@ def plan(session, message, mode, validation_feedback=None):
 
 def ocr_image(data, mime):
     image_url = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
-    result = request("responses", {
+    payload = {
         "model": TEXT_MODEL,
         "instructions": "Transcribe the visible study material faithfully. Return only the text, preserving useful line breaks. If unreadable, return an empty string.",
         "input": [{"role": "user", "content": [
@@ -167,14 +185,18 @@ def ocr_image(data, mime):
             {"type": "input_image", "image_url": image_url, "detail": "high"},
         ]}],
         "store": False,
-    })
+    }
+    if TEXT_MODEL.startswith("gpt-6"):
+        payload["reasoning"] = {"effort": "low"}
+    result = request("responses", payload)
     return response_text(result).strip()
 
 
-def transcribe(wav_bytes):
+def transcribe(wav_bytes, vocabulary=""):
     boundary = f"dyscover-{uuid.uuid4().hex}"
     body = (
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{TRANSCRIBE_MODEL}\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n{vocabulary[:1500]}\r\n"
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\n"
         "Content-Type: audio/wav\r\n\r\n"
     ).encode() + wav_bytes + f"\r\n--{boundary}--\r\n".encode()

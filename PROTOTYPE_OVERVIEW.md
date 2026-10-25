@@ -5,6 +5,8 @@
 
 Dyscover is a study prototype for university students, with particular attention to learners who find dense written material difficult to process. It combines uploaded course material, a conversational tutor, and an editable concept map. Learners can speak, type, inspect a source, or change the map themselves.
 
+**Interaction is the core design idea:** learner actions influence the tutor and the shared map, and every result can lead to another question, source check, revision, or decision. See the [interactive design architecture](DESIGN_ARCHITECTURE.md) for the feedback loops, component responsibilities, and distinction between implemented behavior and future design directions.
+
 This document describes the implementation currently in this repository. It distinguishes working features from prototype limitations. It is a development snapshot, not evidence of educational or clinical effectiveness.
 
 ## 1. What the prototype currently does
@@ -13,7 +15,7 @@ This document describes the implementation currently in this repository. It dist
 |---|---|
 | Material handling | Select or drop study files; inspect and remove selections before starting; retain original uploads with live sessions. |
 | Study conversation | Ask questions by voice or text, explain an understanding, request help, or ask for uncovered material. |
-| Concept mapping | Start from a root concept; add a source-backed concept only after the learner explains it correctly, labelled in their words; preserve the existing structure during ordinary turns. |
+| Concept mapping | Start from a root concept; map source-supported tutor explanations immediately, or expand a complete immediate branch level on request; preserve the existing structure during ordinary turns. |
 | Manual editing | Change labels and descriptions, add connected ideas, move nodes, and confirm removal of nodes and their branches. |
 | Automatic review | Review created or edited content automatically and return Agreed, Corrected, or Proposed deletion feedback. |
 | Source inspection | Show a short explanation, an extracted source quotation or original image, and a reference to the original upload. |
@@ -84,7 +86,7 @@ Requests for missing material direct the tutor to identify a few important uncov
 
 Captions use **one rolling line total**, showing the active speaker. Longer speech rolls to its most recent words. **Thinking…** appears while the tutor is processing. The tutor's last line stays on screen until the next reply, so slower readers can finish it.
 
-The learner's own captions can be toggled from Past sessions. Open **Conversation** to read the complete saved dialogue after captions disappear.
+The learner's own captions can be toggled from Past sessions. Open **Conversation** to read the complete saved dialogue beyond the rolling captions.
 
 ## 4. Reading the concept map
 
@@ -207,7 +209,7 @@ Use sample material and disposable sessions when demonstrating deletion. Before 
 | Extracted source text | Up to 40,000 characters across the session's extracted passages. |
 | PDF pages | No fixed 30-page limit; file size and extracted-text limits still apply. |
 | Uploaded images | Up to 20 million pixels, then resized for text extraction. |
-| Concept map | Up to 20 nodes. |
+| Concept map | Up to 200 nodes; complete branch batches are never silently truncated. |
 | Stored sessions | Up to 30 across the backend database; deleting a session frees a slot. |
 | Successful tutor turns | Up to 25 per session. Automatic content reviews do not increment this learner-turn counter, but do consume AI requests. |
 | AI requests | Default service cap: 250 attempts. Current local startup setting: **5,000 attempts**. |
@@ -241,7 +243,7 @@ $env:OPENAI_API_KEY = 'your-api-key'
 $env:DYSCOVER_TEST_EMAIL = 'your-demo-email@example.com'
 $env:DYSCOVER_TEST_PASSWORD = 'your-demo-password'
 $env:DYSCOVER_SESSION_SECRET = 'a-separate-long-random-secret'
-$env:OPENAI_TUTOR_MODEL = 'gpt-5.4-mini'
+$env:OPENAI_TUTOR_MODEL = 'gpt-6-astra'
 $env:DYSCOVER_MAX_AI_CALLS = '5000'
 ```
 
@@ -293,7 +295,7 @@ Open the frontend and choose **Use demo files → Start studying**. This normall
 
 ## 12. Hosting and data durability
 
-The backend can serve a built frontend from the same origin. A hosted live demo needs HTTPS, WebSocket support, the sign-in configuration, an API key, and an exact `DYSCOVER_PUBLIC_ORIGIN` value without a trailing slash. Set the desired AI request cap in the host's environment as well.
+The backend can serve a built frontend from the same origin. A hosted live demo needs HTTPS, WebSocket support, the sign-in configuration, an API key, and an exact `DYSCOVER_PUBLIC_ORIGIN` value without a trailing slash. On Render, an omitted origin falls back to the service's `RENDER_EXTERNAL_URL`; set an explicit origin for a custom domain. `/api/health` reports the resolved public origin. Set the desired AI request cap in the host's environment as well.
 
 Maps, transcripts, and original uploads are stored in SQLite. A host must retain that database to retain session data. If the host uses ephemeral storage, replacing or redeploying an instance can lose the database. The prototype has no automatic remote backup or local-to-host synchronization.
 
@@ -320,6 +322,8 @@ Hosted deployment behavior has not been revalidated as part of this documentatio
 
 ## 14. Technical implementation
 
+The architecture serves the interaction loop. Inspection uses a silent read path, movement updates presentation only, content edits trigger automatic review, and dialogue connects explanations to the evolving map. The [design architecture](DESIGN_ARCHITECTURE.md) describes these paths and their learner-control guarantees in detail.
+
 ```text
 React / TypeScript frontend
   ├─ Upload and session requests ──────────────┐
@@ -334,12 +338,12 @@ Python / FastAPI backend
   └─ SQLite: sessions, uploads, dialogue, usage
 ```
 
-The tutor uses structured JSON responses, validated against the uploaded source passages and the map contract. The backend translates accepted plans into map events and stores the result. It is a single-tutor pipeline, not a deployed multi-agent system. The speech path is transcription → tutor → speech generation, rather than a direct speech-to-speech model.
+After initial root creation, the tutor runs a bounded backend agent with source-search and individual map-operation tools. Tools stage changes against a session snapshot; the existing source and map validator checks them before the backend saves and emits map events. Explicit deletion, renaming and movement have separate target permissions. Ambiguous spoken node names require clarification. This is one tutor agent inside FastAPI. Voice is configurable: the chained path uses transcription → tutor → speech generation; `DYSCOVER_VOICE_MODE=live` uses GPT-Live for streaming conversation and delegates grounded tutoring/map work to the same backend agent. The local environment enables Live; hosted services retain the chained default until explicitly changed.
 
 | Workload | Configured model / override |
 |---|---|
-| Tutor and concept-map generation; automatic reviews | `gpt-5.4-mini`, controlled by `OPENAI_TUTOR_MODEL`. |
-| Image text extraction | `gpt-4o-mini`, controlled by `OPENAI_MODEL`. An explicitly set `OPENAI_MODEL` also remains the tutor fallback if `OPENAI_TUTOR_MODEL` is absent. |
+| Tutor and concept-map generation; automatic reviews | `gpt-6-astra`, controlled by `OPENAI_TUTOR_MODEL`. |
+| Image text extraction | `gpt-6.1-sol`, controlled by `OPENAI_MODEL`. An explicitly set `OPENAI_MODEL` also remains the tutor fallback if `OPENAI_TUTOR_MODEL` is absent. |
 | Transcription | Configured identifier `gpt-transcribe`, overridable with `OPENAI_TRANSCRIBE_MODEL`. |
 | Speech generation | `gpt-4o-mini-tts`, overridable with `OPENAI_SPEECH_MODEL`; voice `marin`. |
 
@@ -359,6 +363,8 @@ The current implementation sends the extracted passages and recent conversation 
 | `Dyscover/src/api/` | Real API/WebSocket client and scripted demo implementation. |
 | `Dyscover/src/state/store.tsx` | Live UI state, saved/live messages, and map updates. |
 | `backend/app.py` | HTTP/WebSocket endpoints, speech loop, review scheduling, and persistence flow. |
+| `backend/live_voice.py` | GPT-Live audio bridge, transcript persistence, delegation, and voice lifecycle. |
+| `backend/agent.py` | Bounded tool loop, source search, explicit edit permissions, and staged operations. |
 | `backend/ai.py` | Model configuration, structured requests, OCR, transcription, and speech requests. |
 | `backend/tutor.py` | Map validation, content-review outcomes, correction provenance, and manual edits. |
 | `backend/ingest.py` | File extraction, OCR routing, source passages, and upload limits. |
@@ -366,12 +372,13 @@ The current implementation sends the extracted passages and recent conversation 
 | `backend/auth.py` | Shared credentials and signed ownership cookies. |
 | [Backend README](backend/README.md) | Service setup and launch commands. |
 | [API contract](Dyscover/docs/API.md) | Endpoint, message, and map data contracts. |
+| [Interactive design architecture](DESIGN_ARCHITECTURE.md) | Interaction loops, learner control, component responsibilities, and design evaluation. |
 
 ## 15. Progress and verification
 
-Recent completed work includes the tutor model upgrade; local 5,000-request setting; file-selection management; removal of the fixed PDF page cap; independent text input; silent node inspection; explicit waiting feedback; one-line caption expiry; session-wide persistent dialogue; clearer hierarchy and legend; editable nodes; automatic edit review; and confirmation-based removal proposals.
+Recent completed work includes the tutor model upgrade; local 5,000-request setting; file-selection management; removal of the fixed PDF page cap; independent text input; silent node inspection; explicit waiting feedback; one-line rolling captions; session-wide persistent dialogue; clearer hierarchy and legend; editable nodes; automatic edit review; and confirmation-based removal proposals.
 
-The latest backend test run passed **47 tests**. Tests cover authentication/ownership, uploads, grounded plans, message persistence and reload, edit review outcomes, stale-review retries, voice-paused review completion, and deletion confirmation behavior. Frontend checks cover layout, markers, history rendering, message deduplication, and caption persistence. The live frontend build has passed.
+Backend checks cover authentication/ownership, uploads, grounded plans, message persistence and reload, edit review outcomes, stale-review retries, voice-paused review completion, deletion confirmation behavior, and Render origin configuration. Frontend checks cover layout, markers, history rendering, message deduplication, and caption persistence. The backend-agent implementation passed **65 backend tests**, the frontend production build, and node-marker/layout checks. Live API smoke checks verified a deletion proposal without renaming, agreement with a correct user note, and a source-backed explanation that preserved the existing map.
 
 Selected real-model checks have exercised grounded map generation, a removal proposal, and an automatic Agreed review triggered by saving an edit. Browser checks have inspected sample map styles, hierarchy/legend changes, and the conversation panel. These checks are not a complete evaluation of arbitrary course materials or real microphone conditions.
 
@@ -386,3 +393,29 @@ Selected real-model checks have exercised grounded map generation, a removal pro
 - Recovery or undo for confirmed destructive actions.
 
 When changing a feature, update its user-facing description and limitations here alongside the implementation and API contract. Record validation scope accurately rather than treating a scripted demo as a live-service test.
+
+### GPT-Live integration update
+
+The current codebase supports `gpt-live-1` through an authenticated server WebSocket bridge. Speech, captions and the global transcript use Live events; the existing agent controls source checking and map changes. Text works without microphone audio and remains usable after voice failure or pause. Node inspection stays silent. Newer requests supersede stale pending map results.
+
+Enable with `DYSCOVER_VOICE_MODE=live`, restart the backend, and reload the frontend. The local environment file has this setting. Render needs the setting separately after deployment. `chained` restores the previous pipeline. See the [backend guide](backend/README.md#gpt-live-voice-mode) for limits, rollout and protocol details.
+
+A synthetic-audio live API check exercised transcription, delegation to the tutor, returned spoken audio and captions. Real microphone, device echo, and network interruption behaviour still require hands-on testing. Voice has a separate duration cost; switching to text keeps the voice connection alive, while pausing closes it. The default per-connection voice time limit is ten minutes.
+
+GPT-Live verification passed **78 backend tests**, the frontend production build, Live audio protocol checks, and existing marker/layout checks. The Live tests cover transcript updates, delegation deduplication, bounded context and audio, startup failure, paused reviews, duration expiry, and superseded requests.
+
+Tutor/image model upgrade: `gpt-6-astra` now handles tutoring and `gpt-6.1-sol` handles image text extraction, with low reasoning effort on GPT-6 requests. Local overrides and code defaults are updated; GPT-Live remains unchanged. Verification passed **80 backend tests** and live tutor tool-call/image-transcription smoke checks. This does not establish improved learning outcomes or accuracy across arbitrary course materials. Restart to apply; previously extracted materials require re-upload for fresh OCR.
+
+### Interaction fixes
+
+Explicit map-expansion requests now add the complete relevant immediate level of a branch in one batch, independently of explain-back. Existing structure, labels and manual positions remain intact; these additions do not certify understanding. Source-supported tutor explanations are also mapped immediately; learner repetition is optional, not a prerequisite. The agent reserves its sixth response for a final answer, and stops tool work after a complete expansion batch, an explicit edit, or three ordinary changes. Submitted text stays in an expandable You row inside the input dock during thinking, replies and errors. Network failures explicitly indicate when text was not sent.
+
+Verification for these interaction fixes passed **86 backend tests**, the frontend production build, node/dock checks, Live audio protocol checks, and layout checks. A live Astra check added two cited outline nodes on an expansion request while preserving existing nodes and manual positions; a follow-up returned a clear response when the small source was exhausted. The latest expansion path reads all accepted source passages and uses a shared 200-node safety capacity.
+
+### Complete branch expansion and immediate explanation mapping
+
+“Expand the map structure” reveals all relevant missing immediate children of the root together. A named branch or **Expand subtopics** reveals that branch’s complete next level. Existing labels, structure, descriptions and manual positions remain intact. Expansion opens the branch panel, where choosing a child only inspects it; **Expand subtopics** goes one level deeper and **Learn this topic** returns to explanation and optional comprehension questions. The tutor does not recursively exhaust the whole tree without the learner choosing a branch.
+
+Ordinary source-supported explanations now create their matching New nodes immediately. Asking the learner a question remains useful for interaction, but it does not gate map visibility or imply that merely viewing a node proves understanding.
+
+Verification of complete-level expansion and immediate explanation mapping passed **93 backend tests**, the frontend production build, branch-action/node checks, Live audio protocol checks, and a 200-node layout check. Live Astra checks added all five supplied lifecycle topics, then all four Design subtopics, and mapped a tutor explanation without learner repetition. Existing nodes and manual positions were preserved. Manual browser/device QA and broad completeness evaluation on arbitrary courses remain outstanding.

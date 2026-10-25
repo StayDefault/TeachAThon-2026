@@ -1,12 +1,14 @@
 """Dyscover backend. Run: uvicorn app:app --app-dir backend --host 127.0.0.1 --port 8000"""
 
 import asyncio
+import copy
 import io
 import json
 import logging
 import mimetypes
 import os
 import re
+import time
 import uuid
 import wave
 from pathlib import Path
@@ -18,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai import AIError, plan, speak, transcribe
+from agent import edit_scope
 from auth import COOKIE, MAX_AGE, check_credentials, configured, issue, owner
 from ingest import IngestError, chunks_for, extract
 from store import delete_session, get, get_material, list_sessions, save, save_materials
@@ -27,18 +30,11 @@ from voice import Segmenter
 
 app = FastAPI(title="Dyscover local API")
 LOCAL_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
-PUBLIC_ORIGIN = os.environ.get("DYSCOVER_PUBLIC_ORIGIN", "").rstrip("/")
+PUBLIC_ORIGIN = (os.environ.get("DYSCOVER_PUBLIC_ORIGIN") or os.environ.get("RENDER_EXTERNAL_URL", "")).rstrip("/")
 ALLOWED_ORIGINS = [PUBLIC_ORIGIN] if PUBLIC_ORIGIN else LOCAL_ORIGINS + ["http://localhost:8000", "http://127.0.0.1:8000"]
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
                    allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
-log = logging.getLogger(__name__)
-
-
-def map_edit_requested(text):
-    # Questions such as "How does the weight change at each node?" are not edit commands.
-    if re.match(r"\s*(?:how|why|what|when|where|which|who|does|do|is|are)\b", text, re.I):
-        return False
-    return bool(re.search(r"\b(reorganize|reorganise|rearrange|restructure)\b.*\bmap\b|\brename\b|\b(move|remove|delete|put|place)\b.*\b(node|concept|branch|map|under|beneath)\b|\bchange\b.*\b(label|name)\b", text, re.I))
+log = logging.getLogger("uvicorn.error.dyscover")
 
 
 async def checked_plan(session, text, mode, initial=False, review_node_id=None):
@@ -50,8 +46,12 @@ async def checked_plan(session, text, mode, initial=False, review_node_id=None):
             before_review = (target["label"], session["details"][review_node_id]["summary"]) if target else None
             if before_review:
                 text = f"Review only node {review_node_id}. Its saved label is {before_review[0]!r}; its saved description is {before_review[1]!r}. Check this exact content against the material."
-        proposal = await asyncio.to_thread(plan, session, text, mode, feedback)
+        snapshot = copy.deepcopy(session)
+        started = time.monotonic()
+        proposal = await asyncio.to_thread(plan, snapshot, text, mode, feedback)
         try:
+            if session["nodes"] != snapshot["nodes"] or session["details"] != snapshot["details"]:
+                raise PlanError("The map changed while the tutor was thinking. Please retry.", "use the current saved map; the previous map changed during processing")
             if review_node_id:
                 items = proposal.get("nodes", []) if isinstance(proposal, dict) else []
                 if not isinstance(items, list) or not all(isinstance(item, dict) and isinstance(item.get("id"), str) for item in items):
@@ -70,7 +70,9 @@ async def checked_plan(session, text, mode, initial=False, review_node_id=None):
                     correction = {"said": item.get("said"), "actually": item.get("actually")}
                     if before is None or (item["id"] != review_node_id and (item.get("review", "none") != "none" or (item.get("status") == "corrected" and correction != before.get("correction")))):
                         raise PlanError("The tutor changed another node during review", "review only the requested node and leave every other node unchanged")
-            return apply_plan(session, proposal, initial=initial, allow_restructure=mode == "restructure")
+            result = apply_plan(session, proposal, initial=initial, allow_restructure=mode in ("rename", "move", "restructure"))
+            log.info("Tutor plan mode=%s elapsed_ms=%s", mode, round((time.monotonic() - started) * 1000))
+            return result
         except PlanError as exc:
             log.warning("Rejected AI map for %s: %s", mode, exc.reason)
             if attempt:
@@ -123,7 +125,8 @@ def required_session(session_id, owner_id):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "aiConfigured": bool(os.environ.get("OPENAI_API_KEY")), "authConfigured": configured()}
+    return {"status": "ok", "aiConfigured": bool(os.environ.get("OPENAI_API_KEY")), "authConfigured": configured(), "publicOrigin": PUBLIC_ORIGIN or None,
+            "voiceMode": os.environ.get("DYSCOVER_VOICE_MODE", "chained").lower()}
 
 
 @app.post("/api/sessions")
@@ -222,6 +225,7 @@ async def live(websocket: WebSocket, session_id: str):
     await websocket.accept()
     origin = websocket.headers.get("origin")
     if origin and origin not in ALLOWED_ORIGINS:
+        log.warning("Rejected live connection origin %s; allowed origins: %s", origin, ALLOWED_ORIGINS)
         await websocket.close(code=1008)
         return
     try:
@@ -233,12 +237,17 @@ async def live(websocket: WebSocket, session_id: str):
     if session is None or "nodes" not in session:
         await websocket.close(code=4404)
         return
+    if os.environ.get("DYSCOVER_VOICE_MODE", "chained").lower() == "live":
+        from live_voice import serve
+        await serve(websocket, session, checked_plan)
+        return
     send_lock = asyncio.Lock()
     segmenter = Segmenter()
     ended = False
     task = None
     speaking = False
     review_parents = {}
+    selected_node_id = None
 
     async def emit(event):
         async with send_lock:
@@ -252,7 +261,9 @@ async def live(websocket: WebSocket, session_id: str):
         await emit({"type": "voice.status", "status": "speaking"})
         speaking = True
         try:
+            started = time.monotonic()
             pcm = await asyncio.to_thread(speak, text)
+            log.info("Speech audio_ready_ms=%s", round((time.monotonic() - started) * 1000))
             words = text.split()
             if not pcm:
                 await emit({"type": "caption", "caption": {"role": "assistant", "text": text, "final": True}, "message": saved_message})
@@ -291,7 +302,9 @@ async def live(websocket: WebSocket, session_id: str):
         await emit({"type": "caption", "caption": {"role": "user", "text": text, "final": True}, "message": saved_message})
         await emit({"type": "voice.status", "status": "thinking"})
         try:
-            mode = "restructure" if map_edit_requested(text) else "turn"
+            session["selectedNodeId"] = selected_node_id
+            action, _ = edit_scope(session, text)
+            mode = action or "turn"
             answer, events = await checked_plan(session, text, mode)
             session["turns"] += 1
             save(session)
@@ -311,7 +324,10 @@ async def live(websocket: WebSocket, session_id: str):
             wav.writeframes(pcm)
         await emit({"type": "voice.status", "status": "thinking"})
         try:
-            text = await asyncio.to_thread(transcribe, output.getvalue())
+            started = time.monotonic()
+            vocabulary = ", ".join([session["session"]["topic"]] + [node["label"] for node in session["nodes"]])
+            text = await asyncio.to_thread(transcribe, output.getvalue(), vocabulary)
+            log.info("Transcription elapsed_ms=%s", round((time.monotonic() - started) * 1000))
             if text:
                 await turn(text)
             else:
@@ -419,6 +435,8 @@ async def live(websocket: WebSocket, session_id: str):
                         task.cancel()
                     task = asyncio.create_task(turn(text))
             elif kind == "user.node_opened":
+                node_id = event.get("nodeId")
+                selected_node_id = node_id if any(node["id"] == node_id for node in session["nodes"]) else None
                 continue
             elif kind == "user.map_edit":
                 try:

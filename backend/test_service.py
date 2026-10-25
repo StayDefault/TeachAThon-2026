@@ -1,5 +1,6 @@
 import json
 import asyncio
+import importlib.util
 import io
 import os
 import tempfile
@@ -16,6 +17,7 @@ import pymupdf
 
 import ai
 import app
+from agent import edit_scope
 import store
 from ingest import chunks_for, extract
 from tutor import PlanError, apply_plan, manual_edit
@@ -30,7 +32,29 @@ NEXT = {"title": "Photosynthesis", "topic": "Plant biology", "answer": "Light pr
                          "status": "new", "said": "", "actually": "", "summary": "Light powers this process.", "sourceId": "c1"}]}
 
 
+def agent_response(final):
+    def respond(path, body):
+        if body.get("tool_choice") == {"type": "function", "name": "search_materials"}:
+            return {"status": "completed", "output": [{"type": "function_call", "name": "search_materials",
+                    "call_id": "search_test", "arguments": '{"query":"light"}'}]}
+        if body.get("tool_choice") == {"type": "function", "name": "expand_branch"}:
+            return {"status": "completed", "output": [{"type": "function_call", "name": "expand_branch",
+                    "call_id": "expand_test", "arguments": '{"nodes":[]}'}]}
+        return final
+    return respond
+
+
 class ServiceTest(unittest.TestCase):
+    def test_render_origin_fallback_and_explicit_override(self):
+        for explicit, expected in (("", "https://dyscover.onrender.com"), ("https://custom.example/", "https://custom.example")):
+            with self.subTest(explicit=explicit), patch.dict(os.environ, {"DYSCOVER_PUBLIC_ORIGIN": explicit, "RENDER_EXTERNAL_URL": "https://dyscover.onrender.com/"}):
+                spec = importlib.util.spec_from_file_location("render_origin_check", Path(app.__file__))
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                self.assertEqual(module.PUBLIC_ORIGIN, expected)
+                self.assertEqual(module.ALLOWED_ORIGINS, [expected])
+                self.assertEqual(module.health()["publicOrigin"], expected)
+
     def test_ai_auth_failure_has_actionable_message_without_status_code(self):
         failure = urllib.error.HTTPError("https://api.openai.com/v1/responses", 401, "Unauthorized", {}, None)
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch.object(store, "reserve", return_value=True), \
@@ -179,6 +203,22 @@ class ServiceTest(unittest.TestCase):
                 ws.send_json({"type": "user.text", "text": "Tell me more"})
                 self.assertEqual(ws.receive_json()["type"], "caption")
 
+    def test_node_selection_is_silent_context_for_the_next_turn(self):
+        sid = self.create()
+        with patch.object(app, "speak", return_value=b"") as speaking, patch.object(app, "plan", return_value=NEXT) as generate:
+            with self.client.websocket_connect(f"/api/sessions/{sid}/live") as ws:
+                for _ in range(5):
+                    ws.receive_json()
+                ws.send_json({"type": "user.node_opened", "nodeId": "root"})
+                ws.send_json({"type": "user.map_edit", "op": "acknowledge", "nodeId": "root"})
+                self.assertEqual(ws.receive_json()["type"], "map.update")
+                generate.assert_not_called()
+                self.assertEqual(speaking.call_count, 1)
+                ws.send_json({"type": "user.text", "text": "Explain this concept"})
+                while ws.receive_json()["type"] != "map.add":
+                    pass
+                self.assertEqual(generate.call_args.args[0]["selectedNodeId"], "root")
+
     def test_spoken_caption_rolls_forward_with_audio(self):
         sid = self.create()
         with patch.object(app, "speak", return_value=b"\0" * 16384):
@@ -244,11 +284,12 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(session["nodes"][1]["label"], "Sunlight")
 
     def test_explicit_map_edit_phrase_is_recognized(self):
-        self.assertTrue(app.map_edit_requested("Please move the Light node under Water"))
-        self.assertTrue(app.map_edit_requested("Reorganise my concept map"))
-        self.assertFalse(app.map_edit_requested("Explain how light helps plants"))
-        self.assertFalse(app.map_edit_requested("How does the weight change at each node?"))
-        self.assertFalse(app.map_edit_requested("Can you put the loss in simple words?"))
+        scope = lambda text: edit_scope({"nodes": []}, text)[0]
+        self.assertEqual(scope("Please move the Light node under Water"), "move")
+        self.assertEqual(scope("Reorganise my concept map"), "move")
+        self.assertIsNone(scope("Explain how light helps plants"))
+        self.assertIsNone(scope("How does the weight change at each node?"))
+        self.assertIsNone(scope("Can you put the loss in simple words?"))
 
     def test_manual_edits_persist_through_later_ai_turns(self):
         sid = self.create()
@@ -315,10 +356,12 @@ class ServiceTest(unittest.TestCase):
     def test_ai_request_uses_structured_source_plan(self):
         sid = self.create()
         response = {"status": "completed", "output": [{"type": "message", "content": [
-            {"type": "output_text", "text": json.dumps(NEXT)}]}]}
-        with patch.object(ai, "request", return_value=response) as send:
+            {"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
+        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
             result = ai.plan(store.get(sid), "Light matters", "turn")
-        self.assertEqual(result, NEXT)
+        self.assertEqual(result["answer"], NEXT["answer"])
+        self.assertEqual([n["id"] for n in result["nodes"]], ["root"])
+
         body = send.call_args.args[1]
         self.assertEqual(body["model"], ai.TUTOR_MODEL)
         self.assertEqual(body["text"]["format"]["type"], "json_schema")
@@ -359,10 +402,10 @@ class ServiceTest(unittest.TestCase):
         session = store.get(sid)
         apply_plan(session, NEXT)
         manual_edit(session, {"op": "move", "nodeId": "light", "x": 450, "y": 300})
-        response = {"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps(NEXT)}]}]}
-        with patch.object(ai, "request", return_value=response) as send:
+        response = {"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
+        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
             ai.plan(session, "Explain the next topic", "turn")
-        supplied = json.loads(send.call_args.args[1]["input"])["current_nodes"]
+        supplied = json.loads(send.call_args.args[1]["input"][0]["content"])["current_nodes"]
         self.assertTrue(all("position" not in node for node in supplied))
         self.assertFalse(supplied[1].get("userEdited"))
 
@@ -487,17 +530,17 @@ class ServiceTest(unittest.TestCase):
         self.assertTrue(session["nodes"][1]["userEdited"])
         self.assertNotIn("correction", session["nodes"][1])
 
-    def test_missing_content_requests_ask_learner_to_explain_back(self):
+    def test_missing_content_requests_map_explanations_without_explain_back(self):
         sid = self.create()
         response = {"status": "completed", "output": [{"type": "message", "content": [
-            {"type": "output_text", "text": json.dumps(NEXT)}]}]}
-        with patch.object(ai, "request", return_value=response) as send:
+            {"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
+        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
             for text in ("missing content", "expand on anything we haven't covered yet", "I don't know how to proceed"):
                 with self.subTest(text=text):
                     ai.plan(store.get(sid), text, "turn")
                     body = send.call_args.args[1]
-                    self.assertTrue(json.loads(body["input"])["explore_uncovered"])
-                    self.assertIn("ask the learner to explain one of them", body["instructions"])
+                    self.assertTrue(json.loads(body["input"][0]["content"])["explore_uncovered"])
+                    self.assertIn("map them immediately", body["instructions"])
 
     def test_viewed_and_edited_markers_survive_ai_updates(self):
         sid = self.create()
@@ -591,7 +634,7 @@ class ServiceTest(unittest.TestCase):
         def generate(current, text, mode, feedback):
             calls.append(text)
             if len(calls) == 1:
-                current["details"]["light"]["summary"] = "Revised note."
+                session["details"]["light"]["summary"] = "Revised note."
             return dict(NEXT, nodes=[ROOT, dict(NEXT["nodes"][1], review="agree", reviewReason="Supported.")])
         with patch.object(app, "plan", side_effect=generate):
             asyncio.run(app.checked_plan(session, "Review light", "review", review_node_id="light"))
@@ -688,18 +731,18 @@ class ServiceTest(unittest.TestCase):
         session = store.get(sid)
         session["messages"].append({"role": "assistant", "text": "How does light help photosynthesis?"})
         response = {"status": "completed", "output": [{"type": "message", "content": [
-            {"type": "output_text", "text": json.dumps(NEXT)}]}]}
-        with patch.object(ai, "request", return_value=response) as send:
+            {"type": "output_text", "text": json.dumps({"answer": NEXT["answer"]})}]}]}
+        with patch.object(ai, "request", side_effect=agent_response(response)) as send:
             for text in ("how", "don't know much about that", "no idea", "explain for me"):
                 with self.subTest(text=text):
                     ai.plan(session, text, "turn")
                     body = send.call_args.args[1]
-                    payload = json.loads(body["input"])
+                    payload = json.loads(body["input"][0]["content"])
                     self.assertTrue(payload["learner_needs_explanation"])
                     self.assertEqual(payload["recent_messages"][-1]["text"], "How does light help photosynthesis?")
                     self.assertIn("directly answer", body["instructions"])
             ai.plan(session, "Plants use light to make sugars", "turn")
-            self.assertFalse(json.loads(send.call_args.args[1]["input"])["learner_needs_explanation"])
+            self.assertFalse(json.loads(send.call_args.args[1]["input"][0]["content"])["learner_needs_explanation"])
 
     def test_correction_and_manual_edit_events(self):
         sid = self.create()

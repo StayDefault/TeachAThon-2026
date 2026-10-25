@@ -57,7 +57,7 @@ export interface PcmPlayer {
   close(): void;
 }
 
-export function createPcmPlayer(opts: { sampleRate?: number; onLevel?: (level: number) => void } = {}): PcmPlayer {
+export function createPcmPlayer(opts: { sampleRate?: number; onLevel?: (level: number) => void; onPlaybackEnd?: () => void } = {}): PcmPlayer {
   const sampleRate = opts.sampleRate ?? 24000;
   const ctx = new AudioContext({ sampleRate });
   const analyser = ctx.createAnalyser();
@@ -86,7 +86,11 @@ export function createPcmPlayer(opts: { sampleRate?: number; onLevel?: (level: n
       src.start(playhead);
       playhead += audio.duration;
       sources.push(src);
-      src.onended = () => (sources = sources.filter((s) => s !== src));
+      src.onended = () => {
+        if (!sources.includes(src)) return;
+        sources = sources.filter((s) => s !== src);
+        if (sources.length === 0) opts.onPlaybackEnd?.();
+      };
     },
     flush() {
       sources.forEach((s) => s.stop());

@@ -192,3 +192,6 @@
     background-position: -200% 0;
   }
 }
+.panel__explore > .btn { margin: 0 8px 8px 0; }
+.panel__branches { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.panel__branches .btn { width: 100%; justify-content: flex-start; text-align: left; }

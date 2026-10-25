@@ -10,13 +10,17 @@ import './NodePanel.css';
  *   1. where it comes from in the learner's files (highlighted quote)
  *   2. a short summary
  */
-export function NodePanel({ sessionId, nodeId, node, onClose, onEdit, onAdd, onRemove, onKeep }: {
+export function NodePanel({ sessionId, nodeId, node, childNodes = [], onClose, onEdit, onAdd, onRemove, onKeep, onExpand, onLearn, onSelect }: {
   sessionId: string; nodeId: string; onClose: () => void;
   node?: MapNode;
   onEdit: (label: string, summary: string) => void;
   onAdd: (label: string) => void;
   onRemove?: () => void;
   onKeep: () => void;
+  childNodes?: MapNode[];
+  onExpand: () => void;
+  onLearn: () => void;
+  onSelect: (nodeId: string) => void;
 }) {
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [error, setError] = useState('');
@@ -87,6 +91,18 @@ export function NodePanel({ sessionId, nodeId, node, onClose, onEdit, onAdd, onR
             <h3 className="panel__h">{(node?.userEdited ?? detail.userEdited) ? 'YOUR MAP NOTE' : 'WHAT IT MEANS'}</h3>
             <p className="panel__summary">{detail.summary}</p>
             {correction && <p className="panel__correction"><strong>Correction:</strong> {correction.actually}</p>}
+          </section>
+
+          <section className="panel__explore">
+            <h3 className="panel__h">CHOOSE WHAT TO DO NEXT</h3>
+            <button className="btn" onClick={onExpand}>Expand subtopics</button>
+            <button className="btn" onClick={onLearn}>Learn this topic</button>
+            {childNodes.length > 0 && <>
+              <p>Choose a subtopic to inspect, expand, or learn.</p>
+              <ul className="panel__branches">{childNodes.map(child => <li key={child.id}>
+                <button className="btn" aria-label={`Open subtopic ${child.label}`} onClick={() => onSelect(child.id)}>{child.label}</button>
+              </li>)}</ul>
+            </>}
           </section>
 
           <section className="panel__edit">

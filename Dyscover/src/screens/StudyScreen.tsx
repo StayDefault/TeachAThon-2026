@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useStore } from '../state/store';
 import { ConceptMap } from '../components/map/ConceptMap';
 import { MaterialBox } from '../components/MaterialBox';
@@ -10,6 +10,9 @@ import './StudyScreen.css';
 export function StudyScreen() {
   const { state, dispatch, send } = useStore();
   const { session, materials, nodes, focusId, openNodeId, boxFlyIn } = state;
+  useEffect(() => {
+    send({ type: 'user.node_opened', nodeId: openNodeId ?? '' });
+  }, [openNodeId, send]);
 
   const openNode = useCallback(
     (nodeId: string) => {
@@ -33,6 +36,10 @@ export function StudyScreen() {
 
       {openNodeId && (
         <NodePanel sessionId={session.id} nodeId={openNodeId} node={nodes.find((node) => node.id === openNodeId)} onClose={() => dispatch({ type: 'ui.openNode', nodeId: null })}
+          childNodes={nodes.filter(node => node.parentId === openNodeId)}
+          onSelect={openNode}
+          onExpand={() => send({ type: 'user.text', text: `Expand node ${openNodeId}` })}
+          onLearn={() => send({ type: 'user.text', text: `Help me learn about ${nodes.find(node => node.id === openNodeId)?.label ?? 'this topic'} from the material. Explain it, then ask one short comprehension question.` })}
           onKeep={() => send({ type: 'user.map_edit', op: 'keep', nodeId: openNodeId })}
           onEdit={(label, summary) => { dispatch({ type: 'local.mapEdit', op: 'rename', nodeId: openNodeId, label }); send({ type: 'user.map_edit', op: 'update', nodeId: openNodeId, label, summary }); }}
           onAdd={(label) => { const nodeId = crypto.randomUUID().replace(/-/g, '').slice(0, 12); dispatch({ type: 'local.mapEdit', op: 'add', nodeId, parentId: openNodeId, label }); send({ type: 'user.map_edit', op: 'add', nodeId, parentId: openNodeId, label }); }}

@@ -137,7 +137,7 @@ Rules the UI relies on:
 - `userEdited: true` shows a red Edited marker until a source-grounded tutor review agrees. A correction replaces the edit marker with the orange correction style.
 - `pendingRemoval` holds a removal reason. Proposed removals show crosslines and remain in the map until the learner confirms deletion; Keep clears the proposal.
 - `position` is optional and stores a learner-placed pixel position on the map canvas; AI updates preserve it.
-- Add a node only after the learner explains that idea correctly; label it with their words. `hiddenChildren > 0` shows a "+N" badge.
+- Source-supported ideas explained by the tutor appear as New nodes without explain-back. Explicit expansion adds all relevant immediate children in one validated batch, preserving existing nodes and positions. `hiddenChildren > 0` shows a "+N" badge.
 - `order` sorts siblings (ascending).
 
 ### 2.2 Client → server events (`ClientEvent`)
@@ -145,7 +145,7 @@ Rules the UI relies on:
 | `type` | Payload | When |
 |---|---|---|
 | `user.text` | `text` | Learner typed in text mode. Treat exactly like a spoken turn. |
-| `user.node_opened` | `nodeId` | Legacy context event. Opening the node panel is local UI behavior and does not send a live tutor event. |
+| `user.node_opened` | `nodeId` | Selection context only. Opening a node sends its ID; an empty ID clears selection. This event never starts speech, a tutor turn, or content review. |
 | `user.map_edit` | `op`: `rename\|remove\|add\|move\|update\|acknowledge\|keep`, `nodeId?`, `parentId?`, `label?`, `summary?`, `x?`, `y?` | Learner edits the map. `acknowledge` clears New silently; `keep` rejects proposed removal; `remove` confirms deletion of the node and its subtree. Rejected edits receive an error and `map.reset`. |
 | `session.end` | — | Learner tapped the voice area to end. Stop listening and speaking. The client also stops sending mic audio. |
 | `session.resume` | — | Learner tapped again to resume. |
@@ -187,3 +187,18 @@ The easiest backend: give the tutor model these **tools** and forward each call 
       "choices": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "subtitle": { "type": "string" } } } } } } }
 ]
 ```
+
+### GPT-Live transport extension
+
+With server environment `DYSCOVER_VOICE_MODE=live`, the same authenticated `/api/sessions/:id/live` endpoint bridges GPT-Live. The chained pipeline remains the default when unset.
+
+- `voice.audio {sampleRate: 16000}` arrives before audio and configures the browser PCM player. Input and output are mono PCM16 at 16 kHz in Live mode; chained output remains 24 kHz.
+- `voice.interrupt` flushes queued browser playback. In Live mode, a listening status alone must not discard queued speech.
+- Transcript caption events update an existing `message.id` as fragments arrive. The message text is full text so far. The client replaces the matching history entry rather than keeping the first fragment forever.
+- Node selections are stored only as silent backend context. Opening a node never sends a provider commentary or tutor request.
+- `session.end` closes the provider voice connection while keeping the application WebSocket available for typed turns and edit reviews. `session.resume` starts a fresh provider session with saved context.
+- Provider startup failure leaves text available. Backend results are saved as text if voice is unavailable.
+
+GPT-Live delegation metadata stays server-side. Only backend-validated map events are sent to the browser. Captions are actual Live transcripts, grouped approximately by speaker/quiet interval; they are not simulated against generated audio length.
+
+`map.expanded {nodeId}` follows the saved map additions and opens the parent branch panel. Its child list lets the learner inspect a subtopic silently, explicitly expand it, or choose Learn this topic. Explicit expansion uses one `expand_branch` batch against all accepted sources; ordinary turns still use individual tools. The shared node safety capacity is 200.

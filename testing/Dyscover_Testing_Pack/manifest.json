@@ -1,0 +1,29 @@
+{
+  "version": "2026-10-25",
+  "scenarios": [
+    {
+      "id": "S1",
+      "source": "C:\\Users\\staydefault\\Desktop\\Undergraduate\\UG3\\PI\\essay\\assessment-1_0.pdf",
+      "copy": "fixtures/S1/assessment-1_0.pdf",
+      "pdfPages": 2,
+      "imagePdfPage": 1,
+      "stepCount": 33
+    },
+    {
+      "id": "S2",
+      "source": "C:\\Users\\staydefault\\Desktop\\Undergraduate\\UG3\\ILP\\lecture_slides\\week-05-lecture.pdf",
+      "copy": "fixtures/S2/week-05-lecture.pdf",
+      "pdfPages": 32,
+      "imagePdfPage": 19,
+      "stepCount": 33
+    },
+    {
+      "id": "S3",
+      "source": "C:\\Users\\staydefault\\Desktop\\Undergraduate\\UG3\\ILP\\labs&tutorials\\week-04-lab-student\\week-04-lab-student.pdf",
+      "copy": "fixtures/S3/week-04-lab-student.pdf",
+      "pdfPages": 4,
+      "imagePdfPage": 3,
+      "stepCount": 33
+    }
+  ]
+}

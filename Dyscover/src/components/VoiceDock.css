@@ -24,6 +24,25 @@
   display: flex;
   transition: flex-grow 0.5s var(--ease-out);
 }
+.dock--submitted {
+  height: auto;
+  flex-wrap: wrap;
+  border-radius: 28px;
+}
+.dock--submitted .dock__seg { height: 56px; }
+.dock__submitted {
+  flex: 0 0 100%;
+  min-width: 0;
+  padding: 4px 16px 8px;
+  border-bottom: 1px solid rgba(30, 34, 48, 0.12);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.dock__submitted summary { cursor: pointer; min-height: 44px; padding: 10px 0; list-style-position: inside; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dock__submitted summary span { font-weight: 600; margin-right: 8px; }
+.dock__submitted p { margin: 8px 0 0; max-height: 96px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.board:has(.dock--submitted) .captions { bottom: 200px; }
+.board:has(.dock__submitted[open]) .captions { bottom: 296px; }
 
 .dock__divider {
   width: 1px;
