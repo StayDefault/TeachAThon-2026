@@ -2,6 +2,7 @@
 
 import base64
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
@@ -9,6 +10,7 @@ import uuid
 
 from state import ensure
 
+log = logging.getLogger("uvicorn.error.dyscover.ai")
 
 TEXT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-6.1-sol")
 TUTOR_MODEL = os.environ.get("OPENAI_TUTOR_MODEL", os.environ.get("OPENAI_MODEL", "gpt-6-astra"))
@@ -75,9 +77,24 @@ def request(path, body, content_type="application/json", binary=False):
             data = response.read()
         return data if binary else json.loads(data)
     except urllib.error.HTTPError as exc:
+        try:
+            error_code = json.loads(exc.read()).get("error", {}).get("code")
+        except (ValueError, AttributeError, TypeError):
+            error_code = None
+        if not isinstance(error_code, str) or len(error_code) > 80 or not error_code.replace("_", "").replace("-", "").isalnum():
+            error_code = None
+        log.warning("OpenAI request failed endpoint=%s status=%s code=%s", path, exc.code, error_code)
         if exc.code == 401:
             raise AIError("OpenAI rejected the API key. Check OPENAI_API_KEY and restart Dyscover") from None
-        raise AIError("AI service could not complete the request. Please try again later") from None
+        if exc.code == 429:
+            raise AIError("OpenAI rate or spending limit reached. Check the project limits before retrying", 429) from None
+        if exc.code in (403, 404):
+            raise AIError("OpenAI could not access the configured model. Check project access and model settings") from None
+        if exc.code == 400:
+            raise AIError("OpenAI rejected the request. Check the configured model and server logs") from None
+        if 500 <= exc.code < 600:
+            raise AIError("OpenAI is temporarily unavailable. Please try again later") from None
+        raise AIError(f"OpenAI request failed (HTTP {exc.code}). Check the Render logs") from None
     except (urllib.error.URLError, TimeoutError, ValueError):
         raise AIError("AI service unavailable or returned an invalid response") from None
 
