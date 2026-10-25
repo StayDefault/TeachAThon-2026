@@ -1,4 +1,4 @@
-import type { MapNode } from '../../types';
+import type { MapEdge, MapNode } from '../../types';
 
 /**
  * Left-to-right tidy tree layout. Pure function: nodes in → boxes + edges out.
@@ -34,6 +34,7 @@ const BRANCH_GAP = 60;
 function sizeOf(node: MapNode, depth: number): { w: number; h: number } {
   if (depth === 0) return { w: 250, h: 84 };
   if (node.status === 'corrected') return { w: 290, h: 156 };
+  if (node.mastery === 'understood' && node.learnerWords) return { w: 250, h: 100 };
   return { w: 250, h: 64 };
 }
 
@@ -132,25 +133,57 @@ export function layoutTree(nodes: MapNode[], previous?: Layout): Layout {
     box.x = box.node.position.x;
     box.y = box.node.position.y;
   }
+  const all = [...boxes.values()];
+  return {
+    boxes: all,
+    edges: treeEdges(all),
+    width: Math.max(...all.map((b) => b.x + b.w)),
+    height: Math.max(bottom, ...all.map((b) => b.y + b.h)),
+  };
+}
+
+/** Curved parent → child connectors. */
+export function treeEdges(boxes: Box[]): Edge[] {
+  const byId = new Map(boxes.map((box) => [box.node.id, box]));
   const edges: Edge[] = [];
-  for (const b of boxes.values()) {
-    if (!b.node.parentId) continue;
-    const p = boxes.get(b.node.parentId);
+  for (const b of boxes) {
+    const p = b.node.parentId ? byId.get(b.node.parentId) : undefined;
     if (!p) continue;
     const x1 = p.x + p.w;
     const y1 = p.y + p.h / 2;
     const x2 = b.x;
     const y2 = b.y + b.h / 2;
     const bend = Math.max(36, Math.abs(x2 - x1) * 0.45);
-    const d = `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`;
-    edges.push({ id: b.node.id, d, tone: b.node.status });
+    edges.push({ id: b.node.id, d: `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`, tone: b.node.status });
   }
+  return edges;
+}
 
-  const all = [...boxes.values()];
-  return {
-    boxes: all,
-    edges,
-    width: Math.max(...all.map((b) => b.x + b.w)),
-    height: Math.max(bottom, ...all.map((b) => b.y + b.h)),
-  };
+export interface CrossLink {
+  id: string;
+  d: string; // SVG path
+  label: string;
+  x: number; // label centre
+  y: number;
+}
+
+/** Curved cross-links between boxes, bowed sideways so they don't run along tree edges. */
+export function crossLinks(boxes: Box[], edges: MapEdge[]): CrossLink[] {
+  const byId = new Map(boxes.map((box) => [box.node.id, box]));
+  const links: CrossLink[] = [];
+  for (const edge of edges) {
+    const a = byId.get(edge.from);
+    const b = byId.get(edge.to);
+    if (!a || !b) continue;
+    const down = b.y + b.h / 2 >= a.y + a.h / 2;
+    const x1 = a.x + a.w / 2;
+    const y1 = down ? a.y + a.h : a.y;
+    const x2 = b.x + b.w / 2;
+    const y2 = down ? b.y : b.y + b.h;
+    const cx = (x1 + x2) / 2 + Math.max(60, Math.abs(y2 - y1) * 0.25);
+    const cy = (y1 + y2) / 2;
+    links.push({ id: edge.id, d: `M${x1},${y1} Q${cx},${cy} ${x2},${y2}`, label: edge.label,
+      x: 0.25 * x1 + 0.5 * cx + 0.25 * x2, y: 0.25 * y1 + 0.5 * cy + 0.25 * y2 });
+  }
+  return links;
 }

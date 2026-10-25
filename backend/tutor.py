@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 MAX_NODES = 200
+NODE_EXTRAS = ("planId", "mastery", "learnerWords")
 
 class PlanError(ValueError):
     def __init__(self, message, reason=None):
@@ -54,6 +55,12 @@ def apply_plan(session, proposal, initial=False, allow_restructure=False):
             if not isinstance(summary, str) or not 1 <= len(summary.strip()) <= 600:
                 raise ValueError("a node summary must contain one to 600 characters")
             node = {"id": node_id, "parentId": parent, "label": label.strip(), "status": status}
+            for key in NODE_EXTRAS:
+                value = item[key] if key in item else existing.get(node_id, {}).get(key)
+                if value:
+                    node[key] = value
+            if node.get("mastery") not in (None, "introduced", "understood", "review"):
+                raise ValueError("a node mastery must be introduced, understood or review")
             if node_id == "root":
                 if parent is not None:
                     raise ValueError("the root node must have a null parentId")
@@ -270,6 +277,7 @@ def manual_edit(session, event):
             break
         doomed |= children
     session["nodes"] = [node for node in nodes if node["id"] not in doomed]
+    session["edges"] = [edge for edge in session.get("edges", []) if not {edge["from"], edge["to"]} & doomed]
     for dead in doomed:
         session["details"].pop(dead, None)
     return {"type": "map.remove", "nodeId": node_id}

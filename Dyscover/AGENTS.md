@@ -35,7 +35,7 @@ Demo flow to try: **Use demo files → Start studying** and watch (~30 s). Then 
 ## 2. Product rules (do not break these)
 
 1. **Voice mode is hands-free.** No push-to-talk. Selecting text mode stops microphone capture; returning to voice mode starts it again. The voice area of the dock ends or resumes the session.
-2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. Source-supported ideas explained by the tutor appear as New nodes without requiring learner repetition. Explicit expansion adds all relevant immediate subtopics of the requested branch together in one batch, then lets the learner choose a child to expand or return to learning. These nodes do not certify learner understanding. Existing structure and positions stay intact.
+2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. Concepts the tutor explains appear as `introduced`; they turn `understood` (with the learner's own words) only after the learner explains them. Expansion adds a complete immediate level at once. Existing structure and positions stay intact. The lesson progress row shows where the learner is.
 3. **Corrections are the core feature.** When the learner says something wrong, mark that node `corrected`
    with `said` (quoted, never struck through) and `actually` (one sentence), focus it, and explain it out loud.
 4. **Everything is grounded in the learner's files.** Every node should have a source (`fileName`, `page`, verbatim `quote`).
@@ -129,7 +129,7 @@ Known gaps / TODO (good next tasks):
 - Map editing by hand: `user.map_edit` exists in the contract, but there's no UI for rename/drag/delete yet.
 - "+N hidden" nodes: the badge renders, but expanding them needs a `user.expand` event (or reuse `user.node_opened`).
 - Home greeting is text-only (no audio) because no session exists yet; add a TTS call in `useLocalSpeech.ts` if wanted.
-- Recall practice (hide some labels, learner recalls them) was in the original idea; not built.
+- Spaced review (the map fades between sessions and the learner re-explains concepts to restore them) is designed but not built.
 - `error` events are only logged.
 
 ---

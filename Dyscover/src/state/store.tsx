@@ -4,6 +4,8 @@ import type {
   Caption,
   ChatMessage,
   ClientEvent,
+  LessonProgress,
+  MapEdge,
   MapNode,
   Material,
   ServerEvent,
@@ -22,6 +24,8 @@ export interface AppState {
   session: SessionSummary | null;
   materials: Material[];
   nodes: MapNode[];
+  edges: MapEdge[];
+  lesson: LessonProgress;
   voice: VoiceStatus;
   liveVoice: boolean;
   captions: { user: Caption | null; assistant: Caption | null };
@@ -42,6 +46,8 @@ const initialState: AppState = {
   session: null,
   materials: [],
   nodes: [],
+  edges: [],
+  lesson: { items: [], focusId: null },
   voice: 'idle',
   liveVoice: false,
   captions: { user: null, assistant: null },
@@ -58,7 +64,7 @@ const initialState: AppState = {
 
 type Action =
   | { type: 'server'; event: ServerEvent }
-  | { type: 'session.started'; session: SessionSummary; materials: Material[]; flyIn: boolean; nodes?: MapNode[]; messages?: ChatMessage[] }
+  | { type: 'session.started'; session: SessionSummary; materials: Material[]; flyIn: boolean; nodes?: MapNode[]; edges?: MapEdge[]; lesson?: LessonProgress; messages?: ChatMessage[] }
   | { type: 'go.home' }
   | { type: 'ui.inputMode'; mode: 'voice' | 'text' }
   | { type: 'ui.drawer'; open: boolean }
@@ -85,6 +91,11 @@ function removeSubtree(nodes: MapNode[], id: string): MapNode[] {
   return nodes.filter((n) => !doomed.has(n.id));
 }
 
+function keepEdges(edges: MapEdge[], nodes: MapNode[]): MapEdge[] {
+  const ids = new Set(nodes.map((n) => n.id));
+  return edges.filter((e) => ids.has(e.from) && ids.has(e.to));
+}
+
 function applyServer(state: AppState, e: ServerEvent): AppState {
   switch (e.type) {
     case 'voice.audio':
@@ -108,8 +119,14 @@ function applyServer(state: AppState, e: ServerEvent): AppState {
     }
     case 'map.update':
       return { ...state, nodes: state.nodes.map((n) => (n.id === e.nodeId ? { ...n, ...e.patch } : n)) };
-    case 'map.remove':
-      return { ...state, nodes: removeSubtree(state.nodes, e.nodeId) };
+    case 'map.remove': {
+      const nodes = removeSubtree(state.nodes, e.nodeId);
+      return { ...state, nodes, edges: keepEdges(state.edges, nodes) };
+    }
+    case 'map.edges':
+      return { ...state, edges: e.edges };
+    case 'lesson.update':
+      return { ...state, lesson: { items: e.items, focusId: e.focusId } };
     case 'map.focus':
       return { ...state, focusId: e.nodeId };
     case 'map.expanded':
@@ -132,6 +149,8 @@ function reducer(state: AppState, a: Action): AppState {
         session: a.session,
         materials: a.materials,
         nodes: a.nodes ?? [],
+        edges: a.edges ?? [],
+        lesson: a.lesson ?? { items: [], focusId: null },
         captions: { user: null, assistant: null },
         messages: a.messages ?? [],
         openNodeId: null,
@@ -159,7 +178,10 @@ function reducer(state: AppState, a: Action): AppState {
     case 'local.voice':
       return { ...state, voice: a.status };
     case 'local.mapEdit':
-      if (a.op === 'remove') return { ...state, nodes: removeSubtree(state.nodes, a.nodeId) };
+      if (a.op === 'remove') {
+        const nodes = removeSubtree(state.nodes, a.nodeId);
+        return { ...state, nodes, edges: keepEdges(state.edges, nodes) };
+      }
       if (a.op === 'add') return { ...state, nodes: [...state.nodes, { id: a.nodeId, parentId: a.parentId ?? 'root', label: a.label ?? '', status: 'normal', userEdited: true, order: state.nodes.filter((node) => node.parentId === (a.parentId ?? 'root')).length }] };
       if (a.op === 'move') return { ...state, nodes: state.nodes.map((n) => n.id === a.nodeId ? { ...n, position: { x: a.x ?? 0, y: a.y ?? 0 } } : n) };
       return { ...state, nodes: state.nodes.map((n) => (n.id === a.nodeId ? { ...n, label: a.label ?? n.label, userEdited: true, status: 'normal', correction: null, pendingRemoval: null } : n)) };
@@ -221,7 +243,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const openPastSession = useCallback(
     async (sessionId: string) => {
       const snap: SessionSnapshot = await api.getSession(sessionId);
-      dispatch({ type: 'session.started', session: snap.session, materials: snap.materials, nodes: snap.nodes, messages: snap.messages, flyIn: false });
+      dispatch({ type: 'session.started', session: snap.session, materials: snap.materials, nodes: snap.nodes, edges: snap.edges, lesson: snap.lesson, messages: snap.messages, flyIn: false });
       connect(snap.session.id);
     },
     [connect],

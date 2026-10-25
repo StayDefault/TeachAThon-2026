@@ -44,7 +44,9 @@ The UI groups them into Today / This week / Earlier using `updatedAt`.
 ### `GET /api/sessions/:id` — reopen a session
 
 ```json
-{ "session": { … }, "materials": [ … ], "nodes": [ MapNode, … ] }
+{ "session": { … }, "materials": [ … ], "nodes": [ MapNode, … ], "edges": [ MapEdge, … ],
+  "lesson": { "items": [ { "id": "p1", "title": "Forward pass", "state": "understood" } ], "focusId": "p2" },
+  "messages": [ ChatMessage, … ] }
 ```
 
 ### `GET /api/sessions/:id/materials/:materialId` — open an original upload
@@ -110,6 +112,8 @@ Opened as soon as a session starts. Voice mode is hands-free; text mode stops mi
 | `map.update` | `nodeId`, `patch`: partial `MapNode` | e.g. mark a node `corrected`, clear `new`, rename. |
 | `map.remove` | `nodeId` | Removes the node **and its subtree**. |
 | `map.focus` | `nodeId` | Scroll to the node and pulse it for ~2 s. |
+| `map.edges` | `edges`: `MapEdge[]` (`{ id, from, to, label }`) | Replace all cross-links. The client also drops links whose nodes are removed. |
+| `lesson.update` | `items`: `{ id, title, state }[]`, `focusId` | Lesson progress row. `state` ∈ `unseen \| introduced \| attempted \| understood \| review \| skipped`. |
 | `error` | `message` | Logged; shown nowhere yet. |
 
 `MapNode`:
@@ -137,7 +141,8 @@ Rules the UI relies on:
 - `userEdited: true` shows a red Edited marker until a source-grounded tutor review agrees. A correction replaces the edit marker with the orange correction style.
 - `pendingRemoval` holds a removal reason. Proposed removals show crosslines and remain in the map until the learner confirms deletion; Keep clears the proposal.
 - `position` is optional and stores a learner-placed pixel position on the map canvas; AI updates preserve it.
-- Source-supported ideas explained by the tutor appear as New nodes without explain-back. Explicit expansion adds all relevant immediate children in one validated batch, preserving existing nodes and positions. `hiddenChildren > 0` shows a "+N" badge.
+- `mastery` (optional) ∈ `introduced \| understood \| review` is independent of `status`. `understood` nodes may carry `learnerWords`, the learner's own explanation, shown quoted on the node. `planId` links a node to its lesson concept.
+- Concepts the tutor explains appear with mastery `introduced`; they become `understood` only when the learner explains them correctly. Expansion adds a complete immediate level in one validated batch, preserving existing nodes and positions. `hiddenChildren > 0` shows a "+N" badge.
 - `order` sorts siblings (ascending).
 
 ### 2.2 Client → server events (`ClientEvent`)
@@ -145,6 +150,7 @@ Rules the UI relies on:
 | `type` | Payload | When |
 |---|---|---|
 | `user.text` | `text` | Learner typed in text mode. Treat exactly like a spoken turn. |
+| `user.action` | `action`: `learn\|expand`, `nodeId?`, `planId?` | A button press (lesson step, Learn this topic, Expand subtopics). The server phrases it as a request and the tutor decides how to respond. |
 | `user.node_opened` | `nodeId` | Selection context only. Opening a node sends its ID; an empty ID clears selection. This event never starts speech, a tutor turn, or content review. |
 | `user.map_edit` | `op`: `rename\|remove\|add\|move\|update\|acknowledge\|keep`, `nodeId?`, `parentId?`, `label?`, `summary?`, `x?`, `y?` | Learner edits the map. `acknowledge` clears New silently; `keep` rejects proposed removal; `remove` confirms deletion of the node and its subtree. Rejected edits receive an error and `map.reset`. |
 | `session.end` | — | Learner tapped the voice area to end. Stop listening and speaking. The client also stops sending mic audio. |
@@ -167,26 +173,9 @@ server  ◄─ {"type":"voice.status","status":"listening"}
 
 ---
 
-## 3. Suggested map tools for the LLM
+## 3. Tutor tools
 
-The easiest backend: give the tutor model these **tools** and forward each call as the matching `map.*` event (plus store it so `GET /sessions/:id` can return the map).
-
-```json
-[
-  { "name": "add_node", "description": "Add one idea to the learner's map. Keep labels ≤ 5 words.",
-    "parameters": { "type": "object", "required": ["id", "parentId", "label"], "properties": {
-      "id": { "type": "string" }, "parentId": { "type": "string" }, "label": { "type": "string" },
-      "sourcePage": { "type": "integer" }, "sourceQuote": { "type": "string", "description": "verbatim sentence from the materials" } } } },
-  { "name": "correct_node", "description": "The learner has a misconception about this node.",
-    "parameters": { "type": "object", "required": ["id", "said", "actually"], "properties": {
-      "id": { "type": "string" }, "said": { "type": "string" }, "actually": { "type": "string" } } } },
-  { "name": "rename_node", "parameters": { "type": "object", "required": ["id", "label"], "properties": { "id": { "type": "string" }, "label": { "type": "string" } } } },
-  { "name": "remove_node", "parameters": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } } },
-  { "name": "focus_node",  "parameters": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } } },
-  { "name": "offer_choices", "parameters": { "type": "object", "required": ["choices"], "properties": {
-      "choices": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "subtitle": { "type": "string" } } } } } } }
-]
-```
+The implemented tutor tools (always available; the model decides which to use) and the validation rules are described in [the backend guide](../../backend/README.md#backend-tutor-agent). Each accepted change reaches the client as the `map.*` and `lesson.update` events above.
 
 ### GPT-Live transport extension
 

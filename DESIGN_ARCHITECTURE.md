@@ -40,7 +40,7 @@ An explanation or review is connected to a passage in the learner's material whe
 
 ### Feedback should help the learner continue
 
-When the learner asks for missing material or says they do not know how to proceed, the tutor should identify useful uncovered concepts, explain them, and invite the learner to explain one back. During ordinary dialogue, source-supported ideas explained by the tutor become New nodes without requiring learner repetition. Explicit expansion adds the complete immediate level of the requested branch in one batch. Outline additions do not certify learner understanding. It should not repeatedly return the choice of topic to a learner who has already requested direction.
+A lesson plan gives every session a direction. The tutor explains the current concept, invites the learner to say it in their own words, records how well they understood it, and moves on. Explained concepts appear on the map straight away as introduced; they turn understood, with the learner's own words, only when the learner explains them. After a second unsuccessful attempt, or when the learner says they don't know or want to skip, the tutor gives the answer, marks the concept for review and continues. It never ends two replies in a row with a question and never repeats a question.
 
 ### Consequential changes need appropriate control
 
@@ -59,7 +59,8 @@ One-line rolling captions support the immediate interaction and remain available
 | Drag or keyboard-move a node | Rearrange the view. | Save its position and redraw connectors. | None; coordinates are excluded from tutor input. |
 | Arrange branches | Explicitly tidy the automatic layout. | Regroup automatic branches while retaining manual positions. | None. |
 | Speak or type an explanation | Offer an understanding to discuss. | Record the statement, then generate grounded feedback. | Tutor, plus transcription/speech services when applicable. |
-| Ask for an explanation | Request assistance. | Explain from the supplied material and map new supported ideas immediately. | Tutor. |
+| Ask for an explanation | Request assistance. | Explain from the supplied material, map the concept as introduced, and invite an explanation back. | Tutor. |
+| Press a lesson step | Choose what to study. | Make that concept the focus and teach it. | Tutor. |
 | Ask for missing content | Request guided exploration. | Identify and explain uncovered components within the existing map. | Tutor. |
 | Create a connected idea | Add learner-authored content. | Save an Edited node and queue its review. | Automatic review. |
 | Save a label or description | Revise content. | Save the new wording, mark Edited, and queue review. | Automatic review. |
@@ -247,7 +248,7 @@ The current review queue lives with the active connection. An interrupted review
 
 ## 11. Example of the intended interactive experience
 
-Consider a learner studying a Java handout. They ask, “What parts have we not covered?” Dyscover uses the handout and current map to explain additional components. Dyscover maps the explained concepts under relevant existing parents without requiring repetition first. The learner opens Records, reads the source passage, and checks the original file without triggering speech.
+Consider a learner studying a Java handout. They ask, “What parts have we not covered?” Dyscover uses the handout and current map to explain additional components. Dyscover maps the explained concepts as introduced; each turns green with the learner's own words once they explain it. The learner opens Records, reads the source passage, and checks the original file without triggering speech.
 
 They move the Records box so the diagram is easier to read. Its meaning and review marker remain unchanged. They then rewrite its description in their own words. That semantic edit is saved, marked Edited, and reviewed automatically. A supported note receives Agreed feedback and returns to the default style while preserving the learner's wording.
 
@@ -284,6 +285,41 @@ Delegation carries metadata, not an utterance. The server assembles requests fro
 
 Actual Live transcript fragments update stable saved message IDs. Speaker/quiet-interval grouping is approximate because Live supplies no transcript turn-completion event. Playback state is tracked separately. Pausing closes the paid provider connection while retaining text and edit review; resuming restores recent context in a new connection. The previous chained transport is retained for rollback.
 
-Explicit expansion requests provide direct control over map growth: they trigger source search and cited additions without renaming, moving or reviewing existing nodes. The bounded agent reserves its final response for answering. A persistent submitted-text row inside the input dock makes the learner action visible independently of transient voice captions and the Thinking indicator.
+Expansion requests provide direct control over map growth: they add cited children without renaming, moving or reviewing existing nodes. The bounded agent reserves its final response for answering. A persistent submitted-text row inside the input dock makes the learner action visible independently of transient voice captions and the Thinking indicator.
 
 Complete branch expansion is a distinct interaction: show all relevant immediate children together, open the branch chooser, and let the learner inspect a child, expand its next level, or return to learning. It does not recursively open every level at once. A single batch avoids per-node tool round limits and is validated atomically against all accepted source passages. The 200-node safety capacity is reported explicitly if exceeded, without silently dropping topics.
+
+## 15. Learning loop and agent design
+
+This section describes the October 2026 redesign. It borrows GPT-Live's split between fast conversation and deeper background work, and replaces keyword routing with a model that decides from good context.
+
+```mermaid
+flowchart TB
+    Learner["Learner speaks, types or presses a button"]
+    Live["GPT-Live: conversation, backchannel, interruptions\nknows the current concept from a study context"]
+    Tutor["Tutor agent: decides the next step\nall tools available"]
+    Context["Context builder: sources, lesson and progress,\nfocus passage, compact map, summary + recent messages, signals"]
+    Validate["Validator: sources exist, learner quotes are real,\nremoval needs confirmation, map stays a tree"]
+    State["Session state: map, cross-links, lesson plan,\nlearner progress, focus, summary"]
+    Learner --> Live
+    Learner -->|typed text and buttons| Tutor
+    Live -->|delegates judgements, topic changes, map edits| Tutor
+    Context --> Tutor
+    State --> Context
+    Tutor --> Validate --> State
+    State -->|map, lesson and caption events| Learner
+    State -->|updated study context| Live
+```
+
+**Lesson plan and learner model.** At upload, a planner turns the material into three to ten concepts in teaching order, each with a source passage. The session records, per concept, whether it is unseen, introduced, attempted, understood, under review or skipped, how many attempts the learner made, and the learner's own words when they got it right. A focus pointer says what is being studied. The tutor can add concepts the learner asks about and change the focus.
+
+**Decisions belong to the model; safety belongs to the server.** Every tool is available every turn: resolving a spoken name to a node (including sound-alike matches), adding concepts, expanding a branch, recording understanding or a misconception, renaming, moving, linking, proposing removal, changing focus and extending the lesson. The server does not guess intent. It enforces what must be true regardless of intent: citations exist, “understood” and corrections quote the learner's actual words, removal waits for the learner's confirmation, and the result is a valid map. A failed turn saves nothing.
+
+**Context management.** Each call starts with the source passages (stable, so they can be cached), followed by a compact turn context: the lesson with states, the focus concept with its passage, the map with summaries only where they matter, cross-links, a rolling summary of older dialogue plus the last ten messages, and signals such as how many of the tutor's last replies ended with a question. Older messages are folded into the summary in the background, so long sessions stay within budget and a reopened session resumes from the summary and the lesson state.
+
+**Conversation and background work.** In Live mode, GPT-Live handles timing, listening sounds and interruptions. It receives a study context with the current concept's passage, so it can answer simple questions about that concept immediately. It delegates anything that needs judgement or changes state: checking an explanation, moving to another concept, expanding a topic, or editing the map. When the tutor changes the focus or progress, the server sends Live a fresh study context.
+
+**Measuring behaviour.** An evaluation harness plays learner personas against the real tutor and reports progress per turn, question loops, stretches without progress, misheard-deletion accuracy, grounding judgements, latency and API calls. Prompt changes should be compared on these reports rather than on single conversations.
+
+**Not yet built.** Spaced review, where the map fades between sessions and the learner restores it by re-explaining concepts without the tutor explaining first, fits this model but is not implemented. The redesign has been verified with automated tests and the scripted demo, not yet with real-model sessions or learners.
+

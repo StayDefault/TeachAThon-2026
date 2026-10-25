@@ -224,7 +224,7 @@ class LiveServiceTest(unittest.TestCase):
         started, release = threading.Event(), threading.Event()
         calls = []
         replacement = dict(NEXT, nodes=[ROOT, dict(NEXT["nodes"][1], id="water", label="Water")])
-        def plan(snapshot, text, mode, feedback):
+        def plan(snapshot, text, mode, feedback, review_id):
             calls.append(text)
             if len(calls) == 1:
                 started.set()

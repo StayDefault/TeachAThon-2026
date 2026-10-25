@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from state import ensure
+
 
 DB_PATH = Path(os.environ.get("DYSCOVER_DB", Path(__file__).with_name("dyscover.sqlite3")))
 
@@ -38,6 +40,7 @@ def get(session_id, owner_id=None):
         row = db.execute("SELECT data FROM sessions WHERE id = ?", (session_id,)).fetchone()
     session = json.loads(row[0]) if row else None
     if session:
+        ensure(session)
         for node in session.get("nodes", []):
             if "userEdited" not in node and session.get("details", {}).get(node["id"], {}).get("userEdited"):
                 node["userEdited"] = True
