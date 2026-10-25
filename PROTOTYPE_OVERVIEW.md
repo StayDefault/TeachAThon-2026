@@ -419,3 +419,24 @@ Verification for these interaction fixes passed **86 backend tests**, the fronte
 Ordinary source-supported explanations now create their matching New nodes immediately. Asking the learner a question remains useful for interaction, but it does not gate map visibility or imply that merely viewing a node proves understanding.
 
 Verification of complete-level expansion and immediate explanation mapping passed **93 backend tests**, the frontend production build, branch-action/node checks, Live audio protocol checks, and a 200-node layout check. Live Astra checks added all five supplied lifecycle topics, then all four Design subtopics, and mapped a tutor explanation without learner repetition. Existing nodes and manual positions were preserved. Manual browser/device QA and broad completeness evaluation on arbitrary courses remain outstanding.
+
+### Lesson plan, learner progress and an open tutor agent
+
+**What the learner sees.** Uploading material now produces a short lesson plan (three to ten concepts in teaching order). A row of steps under the legend shows each concept's state and the concept being studied; pressing a step asks the tutor to teach it. The tutor explains the current concept, invites the learner to say it in their own words, and moves on. On the map:
+
+| Appearance | Meaning |
+|---|---|
+| White card | Explained by the tutor, not yet shown to be understood. |
+| Green card with ✓ and quoted words | The learner explained it correctly; the quote is their own wording. |
+| Dotted amber frame and **Review** | Not understood after a couple of tries, or skipped; revisit later. |
+| Dashed purple line with a short label | A cross-link between branches, for example “feeds”. |
+
+The legend lists only the states currently on the map. Nodes can be dragged with a finger or mouse, and the empty background can be dragged with a mouse to pan.
+
+**How the tutor decides.** Keyword routing has been removed; the model decides what the learner wants from their words and the context. All map tools are available every turn, including a resolver that matches misheard names (“face” → Phase). Removal still waits for on-screen confirmation, corrections and “understood” must quote the learner, and every change is validated before saving. The prompt tells the tutor not to end two replies in a row with a question, never to repeat a question, and to give the answer and move on after a second unsuccessful attempt or when the learner says “I don't know”, “skip” or “next”. Prompts are in `backend/prompts/`; see the [backend guide](backend/README.md#backend-tutor-agent) for tools and context.
+
+**GPT-Live.** Live now follows OpenAI's recommended structure (backchannel, interruption and delegation policies) and receives the current concept's source passage, so it can answer questions about that concept itself and delegates explanations, topic changes and map edits to the tutor.
+
+**Measuring it.** `backend/evals/run.py` runs learner personas (steady, confused, stuck, speech errors, map editor) against the real tutor and reports progress, question loops, misheard-deletion accuracy, grounding, latency and API calls. See [Evaluations](backend/README.md#evaluations).
+
+**Verification status.** 94 backend tests, the frontend production build and the layout/marker/audio checks pass, and the scripted demo was checked in a browser at desktop and phone widths. The new prompts, the lesson planner and GPT-Live behaviour have **not** yet been run against a real model in this change: run the evaluation and a manual session before a public demonstration.

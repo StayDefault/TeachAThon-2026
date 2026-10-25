@@ -52,6 +52,6 @@ flowchart TD
     AC --> E
 ```
 
-The current prototype applies ordinary validated additions and corrections directly. Only deletion has a required confirmation step. Captions roll within one line, while complete messages remain in Conversation. Tutor-explained source-supported ideas are mapped immediately. Explicit expansion reveals a complete immediate branch level; the learner then chooses a child to expand or returns to learning. Moving a node and opening a node do not trigger tutor review.
+The current prototype applies ordinary validated additions and corrections directly. Only deletion has a required confirmation step. Captions roll within one line, while complete messages remain in Conversation. The tutor follows a lesson plan: explained concepts are mapped as introduced and turn understood when the learner explains them; a lesson progress row shows where the learner is. Explicit expansion reveals a complete immediate branch level; the learner then chooses a child to expand or returns to learning. Moving a node and opening a node do not trigger tutor review.
 
 See [the interactive design architecture](DESIGN_ARCHITECTURE.md) for responsibilities, review sequencing, state meanings, and current limitations.
