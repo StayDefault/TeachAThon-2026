@@ -32,10 +32,10 @@ const GAP = 28;
 const BRANCH_GAP = 60;
 
 function sizeOf(node: MapNode, depth: number): { w: number; h: number } {
-  if (depth === 0) return { w: 250, h: 84 };
-  if (node.status === 'corrected') return { w: 290, h: 156 };
-  if (node.mastery === 'understood' && node.learnerWords) return { w: 250, h: 100 };
-  return { w: 250, h: 64 };
+  if (depth === 0) return { w: 250, h: 112 };
+  if (node.status === 'corrected') return { w: 290, h: 180 };
+  if (node.mastery === 'understood' && node.learnerWords) return { w: 250, h: 110 };
+  return { w: 250, h: 72 };
 }
 
 export function layoutTree(nodes: MapNode[], previous?: Layout): Layout {
@@ -53,7 +53,8 @@ export function layoutTree(nodes: MapNode[], previous?: Layout): Layout {
   const boxes = new Map<string, Box>();
 
   const shift = (id: string, dy: number) => {
-    const b = boxes.get(id)!;
+    const b = boxes.get(id);
+    if (!b) return;
     b.y += dy;
     for (const c of kids.get(id) ?? []) shift(c.id, dy);
   };
@@ -84,45 +85,16 @@ export function layoutTree(nodes: MapNode[], previous?: Layout): Layout {
   };
 
   const previousBoxes = new Map(previous?.boxes.map((box) => [box.node.id, box]));
-  const stable = !!previous?.boxes.length && previous.boxes.every((box) => nodes.some((node) => node.id === box.node.id && node.parentId === box.node.parentId && node.order === box.node.order));
+  const stable = !!previous?.boxes.length && previous.boxes.length === nodes.length && nodes.every((node) => {
+    const before = previousBoxes.get(node.id);
+    const size = before && sizeOf(node, before.depth);
+    return before && before.node.parentId === node.parentId && before.node.order === node.order && size?.h === before.h;
+  });
   let bottom: number;
   if (stable) {
     for (const node of nodes) {
-      const before = previousBoxes.get(node.id);
-      if (before) boxes.set(node.id, { ...before, node, ...sizeOf(node, before.depth) });
-    }
-    const columns = new Map<number, Box[]>();
-    for (const box of boxes.values()) {
-      const column = columns.get(box.depth) ?? [];
-      column.push(box);
-      columns.set(box.depth, column);
-    }
-    for (const column of columns.values()) {
-      column.sort((a, b) => a.y - b.y);
-      for (let i = 1; i < column.length; i++) {
-        column[i].y = Math.max(column[i].y, column[i - 1].y + column[i - 1].h + GAP);
-      }
-    }
-    const pending = nodes.filter((node) => !boxes.has(node.id));
-    while (pending.length) {
-      const index = pending.findIndex((node) => node.parentId && boxes.has(node.parentId));
-      if (index < 0) break;
-      const node = pending.splice(index, 1)[0];
-      const parent = boxes.get(node.parentId!)!;
-      const depth = parent.depth + 1;
-      const { w, h } = sizeOf(node, depth);
-      let y = Math.max(0, parent.y + (parent.h - h) / 2);
-      const siblings = [...boxes.values()].filter((box) => box.node.parentId === node.parentId);
-      if (siblings.length) y = Math.max(y, ...siblings.map((box) => box.y + box.h + GAP));
-      let collision = true;
-      while (collision) {
-        collision = false;
-        for (const box of boxes.values()) if (box.depth === depth && y < box.y + box.h + GAP && y + h + GAP > box.y) {
-          y = box.y + box.h + GAP;
-          collision = true;
-        }
-      }
-      boxes.set(node.id, { node, depth, x: depth * COL, y, w, h });
+      const before = previousBoxes.get(node.id)!;
+      boxes.set(node.id, { ...before, node });
     }
     bottom = Math.max(...[...boxes.values()].map((box) => box.y + box.h));
   } else {

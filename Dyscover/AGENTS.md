@@ -35,7 +35,7 @@ Demo flow to try: **Use demo files → Start studying** and watch (~30 s). Then 
 ## 2. Product rules (do not break these)
 
 1. **Voice mode is hands-free.** No push-to-talk. Selecting text mode stops microphone capture; returning to voice mode starts it again. The voice area of the dock ends or resumes the session.
-2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. Concepts the tutor explains appear as `introduced`; they turn `understood` (with the learner's own words) only after the learner explains them. Expansion adds a complete immediate level at once. Existing structure and positions stay intact. The lesson progress row shows where the learner is.
+2. **The map shows hints, the voice explains.** Node labels ≤ ~5 words. Concepts the tutor explains appear as `introduced`; they turn `understood` (with the learner's own words) only after the learner explains them. Expansion adds a complete immediate level at once. Automatic branches reflow around their parent; manually moved nodes keep their saved positions. The lesson plan remains in tutor state; its progress bar is hidden.
 3. **Corrections are the core feature.** When the learner says something wrong, mark that node `corrected`
    with `said` (quoted, never struck through) and `actually` (one sentence), focus it, and explain it out loud.
 4. **Everything is grounded in the learner's files.** Every node should have a source (`fileName`, `page`, verbatim `quote`).
@@ -59,7 +59,6 @@ src/
   lib/
     audio.ts               ← mic capture (PCM16 16 kHz) + gap-free PCM16 playback, both with loudness levels
     speech.ts              ← replay buttons: plays audioUrl or falls back to browser TTS
-    useLocalSpeech.ts      ← Home-screen greeting (no backend session exists yet)
   state/
     store.tsx              ← useReducer store; applies ServerEvents; owns the live connection
     level.ts               ← voice loudness (separate tiny store so only the orb re-renders)
@@ -128,7 +127,7 @@ Known gaps / TODO (good next tasks):
 
 - Map editing by hand: `user.map_edit` exists in the contract, but there's no UI for rename/drag/delete yet.
 - "+N hidden" nodes: the badge renders, but expanding them needs a `user.expand` event (or reuse `user.node_opened`).
-- Home greeting is text-only (no audio) because no session exists yet; add a TTS call in `useLocalSpeech.ts` if wanted.
+- The home board uses file controls only; voice/text input and captions appear after a study session starts.
 - Spaced review (the map fades between sessions and the learner re-explains concepts to restore them) is designed but not built.
 - `error` events are only logged.
 

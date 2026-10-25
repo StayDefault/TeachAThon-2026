@@ -23,16 +23,7 @@ export function App() {
   const toggleSession = () => {
     const ending = state.voice !== 'ended';
     dispatch({ type: 'local.voice', status: ending ? 'ended' : 'listening' });
-    if (inSession) send({ type: ending ? 'session.end' : 'session.resume' });
-  };
-
-  const sendText = (text: string) => {
-    if (inSession) {
-      send({ type: 'user.text', text });
-    } else {
-      dispatch({ type: 'local.caption', caption: { role: 'user', text, final: true } });
-      dispatch({ type: 'local.caption', caption: { role: 'assistant', text: 'Drop your files on the board first, then we can start.', final: true } });
-    }
+    send({ type: ending ? 'session.end' : 'session.resume' });
   };
 
   useEffect(() => {
@@ -77,18 +68,18 @@ export function App() {
   return (
     <main className="board">
       <Header />
-      {inSession ? <StudyScreen key={state.session?.id} /> : <HomeScreen />}
+      {inSession ? <StudyScreen /> : <HomeScreen />}
 
-      <Captions user={state.captions.user} assistant={state.captions.assistant} status={state.voice} showUser={state.showUserCaptions} beside={!!state.openNodeId || state.historyOpen} />
-      <VoiceDock
-        key={state.session?.id ?? 'home'}
+      {inSession && <Captions user={state.captions.user} assistant={state.captions.assistant} status={state.voice} pendingAction={state.pendingAction} showUser={state.showUserCaptions} beside={!!state.openNodeId || state.historyOpen} />}
+      {inSession && <VoiceDock
+        key={state.session?.id}
         status={state.voice}
         mode={state.inputMode}
         onModeChange={setInputMode}
         onToggleSession={toggleSession}
-        onSendText={sendText}
-        placeholder={inSession ? 'Tell me what you know, or ask me to explain…' : undefined}
-      />
+        onSendText={(text) => send({ type: 'user.text', text })}
+        placeholder="Tell me what you know, or ask me to explain…"
+      />}
 
       <SessionsSidebar />
       {state.error && <p className="backend-error" role="alert">{state.error}</p>}

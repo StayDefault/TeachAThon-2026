@@ -50,11 +50,11 @@ state = reducer(state, { type: 'ui.openNode', nodeId: 'child' });
 assert.equal(state.nodes[1].status, 'normal');
 assert.doesNotMatch(text(render(state.nodes[1])), /New/);
 
-state = reducer(state, { type: 'local.mapEdit', op: 'rename', nodeId: 'child', label: 'Edited child' });
+state = reducer(state, { type: 'server', event: { type: 'map.update', nodeId: 'child', patch: { label: 'Edited child', userEdited: true } } });
 assert.match(render(state.nodes[1]).props.className, /node--edited/);
 assert.equal((text(render(state.nodes[1])).match(/Edited/g) ?? []).length, 2); // label plus one badge
 
-state = reducer(state, { type: 'local.mapEdit', op: 'add', nodeId: 'own', parentId: 'root', label: 'Own idea' });
+state = reducer(state, { type: 'server', event: { type: 'map.add', node: { id: 'own', parentId: 'root', label: 'Own idea', status: 'normal', userEdited: true, order: 1 } } });
 const added = state.nodes[2];
 assert.equal(added.order, 1);
 assert.match(render(added).props.className, /node--edited/);
@@ -64,6 +64,13 @@ const historyState = reducer(state, { type: 'ui.history', open: true });
 assert.equal(historyState.openNodeId, null);
 assert.equal(historyState.historyOpen, true);
 assert.equal(reducer(historyState, { type: 'ui.openNode', nodeId: 'child' }).historyOpen, false);
+const switched = reducer({ ...historyState, voice: 'speaking', focusId: 'child', drawerOpen: true, captions: { user: { role: 'user', text: 'Old', final: true }, assistant: null } },
+  { type: 'session.started', session: { id: 'new', title: 'New', topic: '', updatedAt: '' }, materials: [], flyIn: false });
+assert.equal(switched.voice, 'connecting');
+assert.equal(switched.focusId, null);
+assert.equal(switched.drawerOpen, false);
+assert.equal(switched.openNodeId, null);
+assert.equal(switched.captions.user, null);
 const agreed = reducer(state, { type: 'server', event: { type: 'map.update', nodeId: 'child', patch: { userEdited: false, status: 'normal' } } });
 assert.doesNotMatch(render(agreed.nodes[1]).props.className, /node--edited/);
 const pending = { ...child, pendingRemoval: 'Duplicates another idea.' };
@@ -78,6 +85,13 @@ for (const status of ['speaking', 'listening']) {
   assert.equal(line.props.maxLines, 1);
   assert.equal(line.props.text, status === 'speaking' ? 'Assistant words' : 'User words');
 }
+assert.match(text(Captions({ ...captionProps, status: 'listening', pendingAction: 'expand' })), /Expanding subtopics/);
+let waiting = reducer(state, { type: 'ui.pendingAction', action: 'expand' });
+assert.equal(waiting.pendingAction, 'expand');
+waiting = reducer(waiting, { type: 'server', event: { type: 'voice.status', status: 'thinking' } });
+assert.equal(waiting.pendingAction, 'expand');
+assert.equal(reducer(waiting, { type: 'server', event: { type: 'caption', caption: { role: 'assistant', text: 'Done', final: true } } }).pendingAction, null);
+assert.equal(reducer(waiting, { type: 'server', event: { type: 'error', message: 'Failed' } }).pendingAction, null);
 
 let deleted = false, kept = false, expanded = false, learned = false, selectedBranch = null;
 const detail = { title: 'Child', breadcrumb: [], summary: 'An idea.', messages: [] };
@@ -88,8 +102,12 @@ const panel = NodePanel({ sessionId: 'test', nodeId: 'child', node: pending,
   childNodes: [{ ...child, id: 'sub', parentId: 'child', label: 'Subtopic' }],
   onExpand() { expanded = true; }, onLearn() { learned = true; }, onSelect(nodeId) { selectedBranch = nodeId; },
   onRemove() { deleted = true; }, onKeep() { kept = true; } });
+const waitingPanel = NodePanel({ sessionId: 'test', nodeId: 'child', node: pending, pendingAction: 'learn',
+  onExpand() {}, onLearn() {}, onSelect() {}, onRemove() {}, onKeep() {}, onClose() {} });
+assert.match(text(waitingPanel), /Preparing explanation/);
 const elements = element => !element || typeof element !== 'object' ? []
   : Array.isArray(element) ? element.flatMap(elements) : [element, ...elements(element.props?.children)];
+assert.equal(elements(waitingPanel).filter(element => element.type === 'button' && ['Expand subtopics', 'Learn this topic'].includes(text(element))).every(button => button.props.disabled), true);
 let dockValues = [], dockHook = 0;
 const sentTexts = [];
 const VoiceDock = load('../src/components/VoiceDock.tsx', 'VoiceDock', {
@@ -110,6 +128,9 @@ for (const status of ['thinking', 'speaking', 'listening', 'ended']) {
 }
 assert.equal(elements(drawDock('listening', 'voice')).some(element => element.type === 'details'), false);
 const buttons = elements(panel).filter(element => element.type === 'button');
+for (const label of ['Edit this node', 'Add node', 'Delete this node and its branches']) {
+  assert.equal(buttons.some(button => text(button) === label), false);
+}
 buttons.find(button => button.props['aria-label'] === 'Open subtopic Subtopic').props.onClick();
 assert.equal(selectedBranch, 'sub');
 assert.equal(expanded, false);

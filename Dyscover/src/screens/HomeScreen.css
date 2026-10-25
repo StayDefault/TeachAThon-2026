@@ -25,10 +25,10 @@
 .home__box {
   position: absolute;
   left: 50%;
-  top: 42%;
-  width: 160px;
-  height: 160px;
-  margin: -80px 0 0 -80px;
+  top: 48%;
+  width: 240px;
+  height: 240px;
+  margin: -120px 0 0 -120px;
   border: 2px dashed #9aa3b8;
   border-radius: 22px;
   background: var(--surface);
@@ -71,7 +71,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(42% + 94px);
+  top: calc(48% + 134px);
   margin: 0;
   text-align: center;
   font-size: 14px;
@@ -82,12 +82,44 @@
   position: absolute;
   left: 16px;
   right: 16px;
-  top: calc(42% + 140px);
+  top: calc(48% + 180px);
   display: flex;
   justify-content: center;
   gap: 12px;
   flex-wrap: wrap;
   z-index: 4;
+}
+.home__guide {
+  position: absolute;
+  top: calc(48% + 244px);
+  left: 50%;
+  width: min(860px, calc(100% - 48px));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home__guide li {
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.home__guide span {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.home__guide strong { font-size: 17px; }
+.home__guide p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
 }
 .home__files {
   max-height: min(32vh, 240px);
@@ -98,8 +130,8 @@
 }
 .home__filelist {
   position: absolute;
-  left: calc(50% + 100px);
-  top: calc(42% - 80px);
+  left: calc(50% + 140px);
+  top: calc(48% - 120px);
   width: min(330px, calc(50vw - 120px));
   background: var(--surface);
   border: 1px solid var(--line);
@@ -159,12 +191,19 @@
 }
 .home__filelist-add:disabled { opacity: 0.5; cursor: default; }
 @media (max-width: 700px) {
+  .home__box { top: 54%; }
+  .home__boxlabel { top: calc(54% + 134px); }
+  .home__actions { top: calc(54% + 180px); }
+  .home__guide { display: none; }
   .home__filelist {
     left: 50%;
-    top: calc(42% + 112px);
+    top: calc(54% + 152px);
     width: min(90vw, 360px);
     transform: translateX(-50%);
   }
+}
+@media (max-height: 760px) {
+  .home__guide { display: none; }
 }
 
 /* flying file cards */

@@ -12,12 +12,14 @@ export function Captions({
   user,
   assistant,
   status,
+  pendingAction,
   showUser,
   beside,
 }: {
   user: Caption | null;
   assistant: Caption | null;
   status: VoiceStatus;
+  pendingAction: 'expand' | 'learn' | null;
   showUser: boolean;
   /** true when the node panel is open on the right: keep the text out from under it */
   beside?: boolean;
@@ -34,7 +36,8 @@ export function Captions({
 
   return (
     <div className={`captions ${beside ? 'captions--beside' : ''}`} aria-live="polite">
-      {status === 'thinking' ? <p className="captions__assistant">Thinking…</p>
+      {pendingAction ? <p className="captions__assistant">{pendingAction === 'expand' ? 'Expanding subtopics…' : 'Preparing explanation…'}</p>
+        : status === 'thinking' ? <p className="captions__assistant">Thinking…</p>
         : userVisible && user && status !== 'speaking' ? <RollingLine text={user.text} maxLines={1} className="captions__user" prefix="YOU" />
           : assistant && <RollingLine text={assistant.text} maxLines={1} className="captions__assistant" />}
     </div>

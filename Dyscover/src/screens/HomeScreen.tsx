@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useRef, useState, type DragEvent } from 'react';
 import { useStore } from '../state/store';
-import { useLocalSpeech } from '../lib/useLocalSpeech';
 import { IconArrowRight, IconBox, IconFile, IconImage } from '../components/Icons';
 import { DEMO_MATERIALS } from '../api/mockData';
 import { isMock } from '../api';
@@ -28,7 +27,6 @@ function labelFor(file: File) {
  */
 export function HomeScreen() {
   const { startNewSession } = useStore();
-  const { speak } = useLocalSpeech();
   const boardRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,10 +37,6 @@ export function HomeScreen() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   const [fileListOpen, setFileListOpen] = useState(false);
-
-  useEffect(() => {
-    speak("Hello! Drag your slides, handouts or photos onto the board — I'll pack them into the box and read them.");
-  }, [speak]);
 
   const boxCentre = () => {
     const b = boxRef.current!.getBoundingClientRect();
@@ -66,13 +60,8 @@ export function HomeScreen() {
     spawn.forEach((card, i) => {
       setTimeout(() => setCards((cs) => cs.map((x) => (x.id === card.id ? { ...x, flying: true } : x))), 700 + i * 180);
     });
-    const total = files.length + incoming.length;
     setFiles((f) => [...f, ...spawn.map(({ id, file }) => ({ id, file }))]);
     setStartError('');
-    setTimeout(
-      () => speak(`Got ${total} ${total === 1 ? 'file' : 'files'}. Tap Start when you're ready — or just say "let's start".`),
-      900 + spawn.length * 180,
-    );
   };
 
   const onLanded = (id: number) => {
@@ -213,7 +202,12 @@ export function HomeScreen() {
         {startError && <p role="alert" className="home__error">{startError}</p>}
       </div>
 
-      {/* the dock and captions are rendered by App */}
+      <ol className="home__guide" aria-label="How DysCover works">
+        <li><span>01</span><strong>Add your materials</strong><p>Bring your notes, slides, or a photo.</p></li>
+        <li><span>02</span><strong>Talk it through</strong><p>Explore the ideas in conversation.</p></li>
+        <li><span>03</span><strong>Build your map</strong><p>See how the concepts connect.</p></li>
+      </ol>
+
     </div>
   );
 }

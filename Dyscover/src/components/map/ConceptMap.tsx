@@ -6,9 +6,10 @@ import './ConceptMap.css';
 
 /**
  * The concept map. Data in (nodes), clicks out (onOpen).
- * Existing positions stay put as new nodes are added; new nodes slide in.
+ * Branches reflow when nodes are added; manually moved nodes keep their saved positions.
  */
 export function ConceptMap({
+  sessionId,
   nodes,
   edges = [],
   focusId,
@@ -17,6 +18,7 @@ export function ConceptMap({
   onMove,
   onFocusDone,
 }: {
+  sessionId: string;
   nodes: MapNode[];
   edges?: MapEdge[];
   focusId: string | null;
@@ -26,12 +28,17 @@ export function ConceptMap({
   onFocusDone: () => void;
 }) {
   const previousLayout = useRef<ReturnType<typeof layoutTree> | null>(null);
+  const previousSessionId = useRef(sessionId);
   const [arrangement, setArrangement] = useState(0);
   const layout = useMemo(() => {
+    if (previousSessionId.current !== sessionId) {
+      previousLayout.current = null;
+      previousSessionId.current = sessionId;
+    }
     const next = layoutTree(nodes, previousLayout.current ?? undefined);
     previousLayout.current = next;
     return next;
-  }, [nodes, arrangement]);
+  }, [nodes, arrangement, sessionId]);
   // While a node is dragged, draw it and every connector at the live position.
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const boxes = useMemo(() => drag
@@ -52,6 +59,11 @@ export function ConceptMap({
     const s = Math.min(1, (el.clientWidth - 48) / layout.width, (el.clientHeight - 24) / layout.height);
     setScale(Math.max(0.4, s));
   }, [layout.width, layout.height]);
+
+  useLayoutEffect(() => {
+    setAutoFit(true);
+    fit();
+  }, [sessionId]);
 
   useLayoutEffect(() => {
     if (arrangement > 0 || nodes.length <= 1) fit();

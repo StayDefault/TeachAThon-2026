@@ -33,6 +33,7 @@ export interface AppState {
   focusId: string | null;
   openNodeId: string | null;
   historyOpen: boolean;
+  pendingAction: 'expand' | 'learn' | null;
   inputMode: 'voice' | 'text';
   drawerOpen: boolean;
   showUserCaptions: boolean;
@@ -55,6 +56,7 @@ const initialState: AppState = {
   focusId: null,
   openNodeId: null,
   historyOpen: false,
+  pendingAction: null,
   inputMode: 'voice',
   drawerOpen: false,
   showUserCaptions: true,
@@ -70,11 +72,11 @@ type Action =
   | { type: 'ui.drawer'; open: boolean }
   | { type: 'ui.openNode'; nodeId: string | null }
   | { type: 'ui.history'; open: boolean }
+  | { type: 'ui.pendingAction'; action: 'expand' | 'learn' }
   | { type: 'ui.userCaptions'; show: boolean }
   | { type: 'ui.clearFocus' }
-  | { type: 'local.caption'; caption: Caption }
   | { type: 'local.voice'; status: VoiceStatus }
-  | { type: 'local.mapEdit'; op: 'rename' | 'remove' | 'add' | 'move'; nodeId: string; label?: string; parentId?: string; x?: number; y?: number };
+  | { type: 'local.mapEdit'; op: 'remove' | 'move'; nodeId: string; x?: number; y?: number };
 
 function removeSubtree(nodes: MapNode[], id: string): MapNode[] {
   const doomed = new Set([id]);
@@ -103,11 +105,11 @@ function applyServer(state: AppState, e: ServerEvent): AppState {
     case 'voice.interrupt':
       return state;
     case 'voice.status':
-      return { ...state, voice: e.status, error: e.status === 'thinking' ? null : state.error };
+      return { ...state, voice: e.status, pendingAction: e.status === 'speaking' || e.status === 'ended' ? null : state.pendingAction, error: e.status === 'thinking' ? null : state.error };
     case 'voice.level':
       return state; // handled outside the reducer (see level.ts)
     case 'caption':
-      return { ...state, captions: { ...state.captions, [e.caption.role]: e.caption }, messages: e.message ? state.messages.some(item => item.id === e.message!.id) ? state.messages.map(item => item.id === e.message!.id ? e.message! : item) : [...state.messages, e.message] : state.messages };
+      return { ...state, pendingAction: e.caption.role === 'assistant' ? null : state.pendingAction, captions: { ...state.captions, [e.caption.role]: e.caption }, messages: e.message ? state.messages.some(item => item.id === e.message!.id) ? state.messages.map(item => item.id === e.message!.id ? e.message! : item) : [...state.messages, e.message] : state.messages };
     case 'map.reset':
       return { ...state, nodes: e.nodes };
     case 'map.add': {
@@ -130,10 +132,10 @@ function applyServer(state: AppState, e: ServerEvent): AppState {
     case 'map.focus':
       return { ...state, focusId: e.nodeId };
     case 'map.expanded':
-      return { ...state, openNodeId: e.nodeId, historyOpen: false, focusId: e.nodeId };
+      return { ...state, pendingAction: null, openNodeId: e.nodeId, historyOpen: false, focusId: e.nodeId };
     case 'error':
       console.warn('[DysCover]', e.message);
-      return { ...state, error: e.message };
+      return { ...state, pendingAction: null, error: e.message };
   }
 }
 
@@ -146,6 +148,7 @@ function reducer(state: AppState, a: Action): AppState {
         ...state,
         screen: 'study',
         liveVoice: false,
+        voice: 'connecting',
         session: a.session,
         materials: a.materials,
         nodes: a.nodes ?? [],
@@ -153,8 +156,10 @@ function reducer(state: AppState, a: Action): AppState {
         lesson: a.lesson ?? { items: [], focusId: null },
         captions: { user: null, assistant: null },
         messages: a.messages ?? [],
+        focusId: null,
         openNodeId: null,
         historyOpen: false,
+        pendingAction: null,
         drawerOpen: false,
         boxFlyIn: a.flyIn,
         error: null,
@@ -169,12 +174,12 @@ function reducer(state: AppState, a: Action): AppState {
       return { ...state, openNodeId: a.nodeId, historyOpen: false, nodes: state.nodes.map((node) => node.id === a.nodeId && node.status === 'new' ? { ...node, status: 'normal' } : node) };
     case 'ui.history':
       return { ...state, historyOpen: a.open, openNodeId: a.open ? null : state.openNodeId };
+    case 'ui.pendingAction':
+      return { ...state, pendingAction: a.action, error: null };
     case 'ui.userCaptions':
       return { ...state, showUserCaptions: a.show };
     case 'ui.clearFocus':
       return { ...state, focusId: null };
-    case 'local.caption':
-      return { ...state, captions: { ...state.captions, [a.caption.role]: a.caption } };
     case 'local.voice':
       return { ...state, voice: a.status };
     case 'local.mapEdit':
@@ -182,9 +187,7 @@ function reducer(state: AppState, a: Action): AppState {
         const nodes = removeSubtree(state.nodes, a.nodeId);
         return { ...state, nodes, edges: keepEdges(state.edges, nodes) };
       }
-      if (a.op === 'add') return { ...state, nodes: [...state.nodes, { id: a.nodeId, parentId: a.parentId ?? 'root', label: a.label ?? '', status: 'normal', userEdited: true, order: state.nodes.filter((node) => node.parentId === (a.parentId ?? 'root')).length }] };
-      if (a.op === 'move') return { ...state, nodes: state.nodes.map((n) => n.id === a.nodeId ? { ...n, position: { x: a.x ?? 0, y: a.y ?? 0 } } : n) };
-      return { ...state, nodes: state.nodes.map((n) => (n.id === a.nodeId ? { ...n, label: a.label ?? n.label, userEdited: true, status: 'normal', correction: null, pendingRemoval: null } : n)) };
+      return { ...state, nodes: state.nodes.map((n) => n.id === a.nodeId ? { ...n, position: { x: a.x ?? 0, y: a.y ?? 0 } } : n) };
   }
 }
 
@@ -206,11 +209,16 @@ const Ctx = createContext<Store | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const conn = useRef<LiveConnection | null>(null);
+  const sessionRequest = useRef(0);
+  const activeConnection = useRef(0);
   const inputMode = useRef<'voice' | 'text'>('voice');
 
-  const connect = useCallback((sessionId: string) => {
+  const connect = useCallback((sessionId: string, request: number) => {
+    activeConnection.current = request;
     conn.current?.close();
+    setLevel(0);
     conn.current = api.connect(sessionId, (event) => {
+      if (request !== activeConnection.current) return;
       if (event.type === 'voice.level') setLevel(event.level);
       else dispatch({ type: 'server', event });
     });
@@ -219,7 +227,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => conn.current?.close(), []);
 
-  const send = useCallback((event: ClientEvent) => conn.current?.send(event), []);
+  const send = useCallback((event: ClientEvent) => {
+    if (conn.current) conn.current.send(event);
+    else if (event.type === 'user.action' || event.type === 'user.text') dispatch({ type: 'server', event: { type: 'error', message: 'The session is not connected. Please reopen it and try again.' } });
+  }, []);
   const setInputMode = useCallback((mode: 'voice' | 'text') => {
     inputMode.current = mode;
     conn.current?.setInputMode(mode);
@@ -233,23 +244,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const startNewSession = useCallback(
     async (files: File[]) => {
+      const request = ++sessionRequest.current;
       const { session, materials } = await api.createSession(files);
+      if (request !== sessionRequest.current) return;
       dispatch({ type: 'session.started', session, materials, flyIn: true });
-      connect(session.id);
+      connect(session.id, request);
     },
     [connect],
   );
 
   const openPastSession = useCallback(
     async (sessionId: string) => {
+      const request = ++sessionRequest.current;
       const snap: SessionSnapshot = await api.getSession(sessionId);
+      if (request !== sessionRequest.current) return;
       dispatch({ type: 'session.started', session: snap.session, materials: snap.materials, nodes: snap.nodes, edges: snap.edges, lesson: snap.lesson, messages: snap.messages, flyIn: false });
-      connect(snap.session.id);
+      connect(snap.session.id, request);
     },
     [connect],
   );
 
   const goHome = useCallback(() => {
+    sessionRequest.current++;
+    activeConnection.current++;
     conn.current?.close();
     conn.current = null;
     setLevel(0);

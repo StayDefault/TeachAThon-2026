@@ -10,12 +10,11 @@ import './NodePanel.css';
  *   1. where it comes from in the learner's files (highlighted quote)
  *   2. a short summary
  */
-export function NodePanel({ sessionId, nodeId, node, childNodes = [], onClose, onEdit, onAdd, onRemove, onKeep, onExpand, onLearn, onSelect }: {
+export function NodePanel({ sessionId, nodeId, node, childNodes = [], pendingAction, onClose, onKeep, onRemove, onExpand, onLearn, onSelect }: {
   sessionId: string; nodeId: string; onClose: () => void;
   node?: MapNode;
-  onEdit: (label: string, summary: string) => void;
-  onAdd: (label: string) => void;
-  onRemove?: () => void;
+  pendingAction: 'expand' | 'learn' | null;
+  onRemove: () => void;
   onKeep: () => void;
   childNodes?: MapNode[];
   onExpand: () => void;
@@ -24,18 +23,12 @@ export function NodePanel({ sessionId, nodeId, node, childNodes = [], onClose, o
 }) {
   const [detail, setDetail] = useState<NodeDetail | null>(null);
   const [error, setError] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [label, setLabel] = useState('');
-  const [summary, setSummary] = useState('');
-  const [childLabel, setChildLabel] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setDetail(null);
     setError('');
-    setConfirmDelete(false);
     let alive = true;
-    api.getNodeDetail(sessionId, nodeId).then((d) => { if (alive) { setDetail(d); setLabel(d.title); setSummary(d.summary); setEditing(false); setChildLabel(''); } })
+    api.getNodeDetail(sessionId, nodeId).then((d) => { if (alive) setDetail(d); })
       .catch((cause: unknown) => alive && setError(cause instanceof Error ? cause.message : 'Could not load node details.'));
     return () => {
       alive = false;
@@ -46,7 +39,7 @@ export function NodePanel({ sessionId, nodeId, node, childNodes = [], onClose, o
   useEffect(() => {
     if (!detail || node?.userEdited !== false) return;
     let alive = true;
-    api.getNodeDetail(sessionId, nodeId).then((value) => { if (alive) { setDetail(value); setLabel(value.title); setSummary(value.summary); } })
+    api.getNodeDetail(sessionId, nodeId).then((value) => { if (alive) setDetail(value); })
       .catch((cause: unknown) => alive && setError(cause instanceof Error ? cause.message : 'Could not refresh node details.'));
     return () => { alive = false; };
   }, [sessionId, nodeId, node?.userEdited, node?.correction?.actually]);
@@ -95,8 +88,9 @@ export function NodePanel({ sessionId, nodeId, node, childNodes = [], onClose, o
 
           <section className="panel__explore">
             <h3 className="panel__h">CHOOSE WHAT TO DO NEXT</h3>
-            <button className="btn" onClick={onExpand}>Expand subtopics</button>
-            <button className="btn" onClick={onLearn}>Learn this topic</button>
+            <button className="btn" onClick={onExpand} disabled={!!pendingAction}>Expand subtopics</button>
+            <button className="btn" onClick={onLearn} disabled={!!pendingAction}>Learn this topic</button>
+            {pendingAction && <p className="panel__pending" role="status">{pendingAction === 'expand' ? 'Expanding subtopics…' : 'Preparing explanation…'}</p>}
             {childNodes.length > 0 && <>
               <p>Choose a subtopic to inspect, expand, or learn.</p>
               <ul className="panel__branches">{childNodes.map(child => <li key={child.id}>
@@ -105,32 +99,11 @@ export function NodePanel({ sessionId, nodeId, node, childNodes = [], onClose, o
             </>}
           </section>
 
-          <section className="panel__edit">
-            <button className="btn" onClick={() => setEditing((value) => !value)}>{editing ? 'Cancel editing' : 'Edit this node'}</button>
-            {editing && <form onSubmit={(event) => {
-              event.preventDefault();
-              if (!label.trim() || !summary.trim()) return;
-              onEdit(label.trim(), summary.trim());
-              setDetail({ ...detail, title: label.trim(), summary: summary.trim(), userEdited: true, correction: undefined });
-              setEditing(false);
-            }}>
-              <label htmlFor="node-label">Short label</label>
-              <input id="node-label" value={label} onChange={(event) => setLabel(event.target.value)} maxLength={60} required />
-              <label htmlFor="node-summary">Brief description</label>
-              <textarea id="node-summary" value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={600} rows={4} required />
-              <button className="btn" type="submit" disabled={label.trim().split(/\s+/).length > 5}>Save changes</button>
-            </form>}
-            <form onSubmit={(event) => { event.preventDefault(); if (childLabel.trim()) { onAdd(childLabel.trim()); setChildLabel(''); } }}>
-              <label htmlFor="node-child">Add a connected idea</label>
-              <input id="node-child" value={childLabel} onChange={(event) => setChildLabel(event.target.value)} maxLength={60} placeholder="New idea" required />
-              <button className="btn" type="submit" disabled={childLabel.trim().split(/\s+/).length > 5}>Add node</button>
-            </form>
-            {onRemove && (node?.pendingRemoval || confirmDelete ? <div className="panel__deletion" role="group" aria-label="Confirm node deletion">
-              <p>{node?.pendingRemoval || 'Delete this node?'} This also deletes its connected branches.</p>
+          {node?.pendingRemoval && <section className="panel__deletion" role="group" aria-label="Confirm node deletion">
+              <p>{node.pendingRemoval} This also deletes its connected branches.</p>
               <button className="btn panel__remove" onClick={onRemove}>Confirm deletion</button>
-              <button className="btn" onClick={() => { setConfirmDelete(false); if (node?.pendingRemoval) onKeep(); }}>Keep node</button>
-            </div> : <button className="btn panel__remove" onClick={() => setConfirmDelete(true)}>Delete this node and its branches</button>)}
-          </section>
+              <button className="btn" onClick={onKeep}>Keep node</button>
+          </section>}
 
           {detail.source && (
             <section>

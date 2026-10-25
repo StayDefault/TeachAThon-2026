@@ -190,6 +190,7 @@ function connectLive(address: string, onEvent: (e: ServerEvent) => void): LiveCo
       }
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
       else if (event.type === 'user.text') onEvent({ type: 'error', message: "Your message wasn't sent because the connection isn't ready. Please try again." });
+      else if (event.type === 'user.action') onEvent({ type: 'error', message: "Your request wasn't sent because the connection isn't ready. Please try again." });
     },
     setInputMode(mode) {
       inputMode = mode;
