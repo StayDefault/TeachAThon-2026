@@ -1,5 +1,5 @@
 import type { ChatMessage, ClientEvent, LessonItem, LessonProgress, MapEdge, MapNode, Material, MaterialKind, NodeDetail, ServerEvent } from '../types';
-import type { DysCoverBackend, LiveConnection } from './backend';
+import type { DysCoverBackend, LiveConnection } from './contract';
 import {
   DEMO_MATERIALS,
   DEMO_SESSIONS,

@@ -1,5 +1,5 @@
 import type { ClientEvent, ServerEvent, VoiceStatus } from '../types';
-import type { DysCoverBackend, LiveConnection } from './backend';
+import type { DysCoverBackend, LiveConnection } from './contract';
 import { createPcmPlayer, startMic, type MicHandle } from '../lib/audio';
 
 export async function apiError(res: Response): Promise<Error> {

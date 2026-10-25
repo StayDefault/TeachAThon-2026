@@ -52,7 +52,7 @@ Demo flow to try: **Use demo files → Start studying** and watch (~30 s). Then 
 src/
   types.ts                 ← data model + all live events (source of truth, mirrored in docs/API.md)
   api/
-    backend.ts             ← DysCoverBackend interface: the ONLY way the UI talks to a backend
+    contract.ts            ← DysCoverBackend interface: the ONLY way the UI talks to a backend
     index.ts               ← picks mock or http via VITE_USE_MOCK
     mock.ts, mockData.ts   ← scripted demo (story about backpropagation)
     http.ts                ← real client: REST + WebSocket + mic/speaker streaming
@@ -71,11 +71,12 @@ src/
     MaterialBox.tsx        ← study box under the logo; flies in from screen centre
     map/layout.ts          ← pure tidy-tree layout (left → right)
     map/ConceptMap.tsx     ← renders nodes/edges, zoom/fit, focus pulse, dimming
-    NodePanel.tsx          ← quarter-screen panel: source quote, summary, editing
+    NodePanel.tsx          ← quarter-screen panel: source quote, summary, topic actions
     ConversationHistory.tsx ← session-wide conversation drawer
     Captions.tsx           ← live subtitles (assistant big, learner small)
     VoiceDock.tsx, Orb.tsx ← glass dock, iridescent orb that scales with loudness
   styles/global.css        ← design tokens (colours, font, radii) — reuse them
+tests/                    ← layout, marker, and live-audio checks (`npm test`)
 ```
 
 Data flow: backend → `ServerEvent` → `store.tsx` reducer → React. UI → `send(ClientEvent)` → backend.

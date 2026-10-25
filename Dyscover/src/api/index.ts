@@ -1,4 +1,4 @@
-import type { DysCoverBackend } from './backend';
+import type { DysCoverBackend } from './contract';
 import { createHttpBackend } from './http';
 import { createMockBackend } from './mock';
 
@@ -10,4 +10,4 @@ export const api: DysCoverBackend = useMock
   : createHttpBackend(import.meta.env.VITE_API_BASE || '');
 
 export const isMock = useMock;
-export type { DysCoverBackend, LiveConnection } from './backend';
+export type { DysCoverBackend, LiveConnection } from './contract';
