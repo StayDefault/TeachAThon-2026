@@ -133,27 +133,30 @@ export function layoutTree(nodes: MapNode[], previous?: Layout): Layout {
     box.x = box.node.position.x;
     box.y = box.node.position.y;
   }
+  const all = [...boxes.values()];
+  return {
+    boxes: all,
+    edges: treeEdges(all),
+    width: Math.max(...all.map((b) => b.x + b.w)),
+    height: Math.max(bottom, ...all.map((b) => b.y + b.h)),
+  };
+}
+
+/** Curved parent → child connectors. */
+export function treeEdges(boxes: Box[]): Edge[] {
+  const byId = new Map(boxes.map((box) => [box.node.id, box]));
   const edges: Edge[] = [];
-  for (const b of boxes.values()) {
-    if (!b.node.parentId) continue;
-    const p = boxes.get(b.node.parentId);
+  for (const b of boxes) {
+    const p = b.node.parentId ? byId.get(b.node.parentId) : undefined;
     if (!p) continue;
     const x1 = p.x + p.w;
     const y1 = p.y + p.h / 2;
     const x2 = b.x;
     const y2 = b.y + b.h / 2;
     const bend = Math.max(36, Math.abs(x2 - x1) * 0.45);
-    const d = `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`;
-    edges.push({ id: b.node.id, d, tone: b.node.status });
+    edges.push({ id: b.node.id, d: `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}`, tone: b.node.status });
   }
-
-  const all = [...boxes.values()];
-  return {
-    boxes: all,
-    edges,
-    width: Math.max(...all.map((b) => b.x + b.w)),
-    height: Math.max(bottom, ...all.map((b) => b.y + b.h)),
-  };
+  return edges;
 }
 
 export interface CrossLink {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MapEdge, MapNode } from '../../types';
 import { IconArrange, IconFit, IconMinus, IconPencil, IconPlus } from '../Icons';
-import { crossLinks, layoutTree, type Box } from './layout';
+import { crossLinks, layoutTree, treeEdges, type Box } from './layout';
 import './ConceptMap.css';
 
 /**
@@ -32,7 +32,13 @@ export function ConceptMap({
     previousLayout.current = next;
     return next;
   }, [nodes, arrangement]);
-  const links = useMemo(() => crossLinks(layout.boxes, edges), [layout, edges]);
+  // While a node is dragged, draw it and every connector at the live position.
+  const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const boxes = useMemo(() => drag
+    ? layout.boxes.map((b) => (b.node.id === drag.id ? { ...b, x: Math.max(0, b.x + drag.dx), y: Math.max(0, b.y + drag.dy) } : b))
+    : layout.boxes, [layout, drag]);
+  const lines = useMemo(() => (drag ? treeEdges(boxes) : layout.edges), [boxes, drag, layout]);
+  const links = useMemo(() => crossLinks(boxes, edges), [boxes, edges]);
   const viewport = useRef<HTMLDivElement>(null);
   const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const [panning, setPanning] = useState(false);
@@ -102,7 +108,7 @@ export function ConceptMap({
         </div>
       )}
 
-      <div className={`map ${selectedId ? 'map--dimmed' : ''} ${panning ? 'map--panning' : ''}`} ref={viewport}
+      <div className={`map ${selectedId ? 'map--dimmed' : ''} ${panning ? 'map--panning' : ''} ${drag ? 'map--dragging' : ''}`} ref={viewport}
         onPointerDown={(event) => {
           // Mouse users drag the background to pan; touch already scrolls natively.
           const el = viewport.current;
@@ -122,7 +128,7 @@ export function ConceptMap({
         <div className="map__sizer" style={{ width: layout.width * scale, height: layout.height * scale }}>
           <div className="map__stage" style={{ width: layout.width, height: layout.height, transform: `scale(${scale})` }}>
             <svg className="map__edges" width={layout.width} height={layout.height} aria-hidden="true">
-              {layout.edges.map((e) => (
+              {lines.map((e) => (
                 <path key={e.id} d={e.d} className={`map__edge map__edge--${e.tone}`} />
               ))}
               {links.map((link) => <path key={link.id} d={link.d} className="map__link" />)}
@@ -130,15 +136,17 @@ export function ConceptMap({
             {links.map((link) => (
               <span key={link.id} className="map__link-label" style={{ left: link.x, top: link.y }}>{link.label}</span>
             ))}
-            {layout.boxes.map((b) => (
+            {boxes.map((b) => (
               <NodeBox
                 key={b.node.id}
                 box={b}
                 seed={seed}
                 focused={focusId === b.node.id}
                 selected={selectedId === b.node.id}
+                dragging={drag?.id === b.node.id}
                 scale={scale}
                 onOpen={onOpen}
+                onDrag={setDrag}
                 onMove={onMove}
               />
             ))}
@@ -149,12 +157,14 @@ export function ConceptMap({
   );
 }
 
-function NodeBox({ box, seed, focused, selected, scale, onOpen, onMove }: { box: Box; seed: boolean; focused: boolean; selected: boolean; scale: number; onOpen: (id: string) => void; onMove: (id: string, x: number, y: number) => void }) {
+function NodeBox({ box, seed, focused, selected, dragging, scale, onOpen, onDrag, onMove }: {
+  box: Box; seed: boolean; focused: boolean; selected: boolean; dragging: boolean; scale: number;
+  onOpen: (id: string) => void; onDrag: (drag: { id: string; dx: number; dy: number } | null) => void; onMove: (id: string, x: number, y: number) => void;
+}) {
   const { node, depth } = box;
   const movable = !seed && node.id !== 'root';
-  const drag = useRef<{ x: number; y: number; dx: number; dy: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; left: number; top: number; dx: number; dy: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
-  const [offset, setOffset] = useState<[number, number] | null>(null);
   const tag = node.pendingRemoval ? <span className="node__removal">Review removal</span>
     : node.userEdited ? <span className="node__edited">Edited</span>
       : node.status === 'new' ? <span className="node__new">New</span>
@@ -171,7 +181,7 @@ function NodeBox({ box, seed, focused, selected, scale, onOpen, onMove }: { box:
     focused ? 'node--focus' : '',
     selected ? 'node--selected' : '',
     movable ? 'node--movable' : '',
-    offset ? 'node--dragging' : '',
+    dragging ? 'node--dragging' : '',
   ].join(' ');
   const state = node.pendingRemoval ? ' (proposed removal)' : node.status === 'corrected' ? ' (corrected)' : node.userEdited ? ' (edited)'
     : node.status === 'new' ? ' (new)' : node.mastery === 'understood' ? ' (understood)' : node.mastery === 'review' ? ' (to review)' : '';
@@ -180,10 +190,10 @@ function NodeBox({ box, seed, focused, selected, scale, onOpen, onMove }: { box:
     <button
       data-node={node.id}
       className={cls}
-      style={{ left: box.x, top: box.y, width: box.w, minHeight: box.h, transform: offset ? `translate(${offset[0]}px, ${offset[1]}px)` : undefined }}
+      style={{ left: box.x, top: box.y, width: box.w, minHeight: box.h }}
       onPointerDown={(event) => {
         if (!movable || event.button !== 0) return;
-        drag.current = { x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false };
+        drag.current = { x: event.clientX, y: event.clientY, left: box.x, top: box.y, dx: 0, dy: 0, moved: false };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
@@ -193,17 +203,17 @@ function NodeBox({ box, seed, focused, selected, scale, onOpen, onMove }: { box:
         d.dy = (event.clientY - d.y) / scale;
         if (!d.moved && Math.hypot(d.dx, d.dy) < 4) return;
         d.moved = true;
-        setOffset([d.dx, d.dy]);
+        onDrag({ id: node.id, dx: d.dx, dy: d.dy });
       }}
       onPointerUp={() => {
         const d = drag.current;
         drag.current = null;
-        setOffset(null);
+        onDrag(null);
         if (!d?.moved) return;
         dragged.current = true;
-        onMove(node.id, Math.max(0, Math.round(box.x + d.dx)), Math.max(0, Math.round(box.y + d.dy)));
+        onMove(node.id, Math.max(0, Math.round(d.left + d.dx)), Math.max(0, Math.round(d.top + d.dy)));
       }}
-      onPointerCancel={() => { drag.current = null; setOffset(null); }}
+      onPointerCancel={() => { drag.current = null; onDrag(null); }}
       onClick={() => {
         if (dragged.current) { dragged.current = false; return; }
         onOpen(node.id);

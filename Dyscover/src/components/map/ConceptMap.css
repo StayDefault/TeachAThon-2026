@@ -306,3 +306,4 @@
 .node--movable { touch-action: none; }
 .node.node--dragging { transition: none; z-index: 3; cursor: grabbing; box-shadow: var(--shadow-float); }
 .map--panning { cursor: grabbing; user-select: none; }
+.map--dragging .map__edge { transition: none; animation: none; }
