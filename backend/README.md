@@ -1,6 +1,6 @@
 # Dyscover backend
 
-For current feature descriptions, node states, demo instructions, and learner guidance, see the [prototype overview and user guide](../PROTOTYPE_OVERVIEW.md).
+For current feature descriptions, node states, demo instructions, and learner guidance, see the [prototype overview and user guide](../docs/PROTOTYPE_OVERVIEW.md).
 
 On Render, set `DYSCOVER_PUBLIC_ORIGIN` to the exact public HTTPS origin. If omitted, the backend falls back to Render's `RENDER_EXTERNAL_URL`. `/api/health` reports the resolved `publicOrigin` to help diagnose rejected live connections. Configure the explicit origin when using a custom domain.
 

@@ -1,6 +1,6 @@
 # DysCover · 前端
 
-最新原型功能、开发进度和完整使用指南见 [Dyscover Prototype Overview](../PROTOTYPE_OVERVIEW.md)（英文）。该文档区分真实 AI 模式与脚本演示模式，并记录当前限制。
+最新原型功能、开发进度和完整使用指南见 [Dyscover Prototype Overview](../docs/PROTOTYPE_OVERVIEW.md)（英文）。该文档区分真实 AI 模式与脚本演示模式，并记录当前限制。
 
 给有阅读障碍的大学生用的**全语音学习工具**。把课件、作业说明、笔记照片拖到白板上，语音助教会一边和你聊，一边长出一张思维导图；你理解错的地方会用橙色标出来并讲清楚。
 
