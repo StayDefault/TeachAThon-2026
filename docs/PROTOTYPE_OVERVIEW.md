@@ -370,8 +370,8 @@ The current implementation sends the extracted passages and recent conversation 
 | `backend/ingest.py` | File extraction, OCR routing, source passages, and upload limits. |
 | `backend/store.py` | SQLite session, original-file, history, and usage storage. |
 | `backend/auth.py` | Shared credentials and signed ownership cookies. |
-| [Backend README](backend/README.md) | Service setup and launch commands. |
-| [API contract](Dyscover/docs/API.md) | Endpoint, message, and map data contracts. |
+| [Backend README](../backend/README.md) | Service setup and launch commands. |
+| [API contract](../Dyscover/docs/API.md) | Endpoint, message, and map data contracts. |
 | [Interactive design architecture](DESIGN_ARCHITECTURE.md) | Interaction loops, learner control, component responsibilities, and design evaluation. |
 
 ## 15. Progress and verification
@@ -398,7 +398,7 @@ When changing a feature, update its user-facing description and limitations here
 
 The current codebase supports `gpt-live-1` through an authenticated server WebSocket bridge. Speech, captions and the global transcript use Live events; the existing agent controls source checking and map changes. Text works without microphone audio and remains usable after voice failure or pause. Node inspection stays silent. Newer requests supersede stale pending map results.
 
-Enable with `DYSCOVER_VOICE_MODE=live`, restart the backend, and reload the frontend. The local environment file has this setting. Render needs the setting separately after deployment. `chained` restores the previous pipeline. See the [backend guide](backend/README.md#gpt-live-voice-mode) for limits, rollout and protocol details.
+Enable with `DYSCOVER_VOICE_MODE=live`, restart the backend, and reload the frontend. The local environment file has this setting. Render needs the setting separately after deployment. `chained` restores the previous pipeline. See the [backend guide](../backend/README.md#gpt-live-voice-mode) for limits, rollout and protocol details.
 
 A synthetic-audio live API check exercised transcription, delegation to the tutor, returned spoken audio and captions. Real microphone, device echo, and network interruption behaviour still require hands-on testing. Voice has a separate duration cost; switching to text keeps the voice connection alive, while pausing closes it. The default per-connection voice time limit is ten minutes.
 
@@ -433,10 +433,10 @@ Verification of complete-level expansion and immediate explanation mapping passe
 
 The legend lists only the states currently on the map. Nodes can be dragged with a finger or mouse, and the empty background can be dragged with a mouse to pan.
 
-**How the tutor decides.** Keyword routing has been removed; the model decides what the learner wants from their words and the context. All map tools are available every turn, including a resolver that matches misheard names (“face” → Phase). Removal still waits for on-screen confirmation, corrections and “understood” must quote the learner, and every change is validated before saving. The prompt tells the tutor not to end two replies in a row with a question, never to repeat a question, and to give the answer and move on after a second unsuccessful attempt or when the learner says “I don't know”, “skip” or “next”. Prompts are in `backend/prompts/`; see the [backend guide](backend/README.md#backend-tutor-agent) for tools and context.
+**How the tutor decides.** Keyword routing has been removed; the model decides what the learner wants from their words and the context. All map tools are available every turn, including a resolver that matches misheard names (“face” → Phase). Removal still waits for on-screen confirmation, corrections and “understood” must quote the learner, and every change is validated before saving. The prompt tells the tutor not to end two replies in a row with a question, never to repeat a question, and to give the answer and move on after a second unsuccessful attempt or when the learner says “I don't know”, “skip” or “next”. Prompts are in `backend/prompts/`; see the [backend guide](../backend/README.md#backend-tutor-agent) for tools and context.
 
 **GPT-Live.** Live now follows OpenAI's recommended structure (backchannel, interruption and delegation policies) and receives the current concept's source passage, so it can answer questions about that concept itself and delegates explanations, topic changes and map edits to the tutor.
 
-**Measuring it.** `backend/evals/run.py` runs learner personas (steady, confused, stuck, speech errors, map editor) against the real tutor and reports progress, question loops, misheard-deletion accuracy, grounding, latency and API calls. See [Evaluations](backend/README.md#evaluations).
+**Measuring it.** `backend/evals/run.py` runs learner personas (steady, confused, stuck, speech errors, map editor) against the real tutor and reports progress, question loops, misheard-deletion accuracy, grounding, latency and API calls. See [Evaluations](../backend/README.md#evaluations).
 
 **Verification status.** 94 backend tests, the frontend production build and the layout/marker/audio checks pass, and the scripted demo was checked in a browser at desktop and phone widths. The new prompts, the lesson planner and GPT-Live behaviour have **not** yet been run against a real model in this change: run the evaluation and a manual session before a public demonstration.

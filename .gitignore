@@ -8,3 +8,5 @@ backend/.env.local.ps1
 backend/.tmp/
 Dyscover/*.tsbuildinfo
 backend/evals/results/
+.DS_Store
+docs/report/

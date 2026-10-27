@@ -221,7 +221,7 @@ The full spoken conversation is not stored as a recording. The live implementati
 
 The frontend uses React, TypeScript, and a REST/WebSocket client. FastAPI handles sessions, extraction, live interactions, and storage. The voice pipeline is transcription followed by tutor generation and speech generation. It is not a direct speech-to-speech implementation.
 
-The tutor currently reads extracted passages directly; an embedding-based retrieval layer is not implemented. Model details, launch commands, limits, and user instructions are maintained in [the prototype overview](PROTOTYPE_OVERVIEW.md). Event contracts are maintained in [the API document](Dyscover/docs/API.md).
+The tutor currently reads extracted passages directly; an embedding-based retrieval layer is not implemented. Model details, launch commands, limits, and user instructions are maintained in [the prototype overview](PROTOTYPE_OVERVIEW.md). Event contracts are maintained in [the API document](../Dyscover/docs/API.md).
 
 ## 9. State and data ownership
 
